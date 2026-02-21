@@ -22,6 +22,7 @@ export default function ScreenerPage() {
         { id: "MSFT", type: "ticker", label: "Microsoft Corporation" },
         { id: "GOOGL", type: "ticker", label: "Alphabet Inc." }
     ]);
+    const [region, setRegion] = useState<string>("us");
     const [results, setResults] = useState<ScreenResult[]>([]);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -35,7 +36,7 @@ export default function ScreenerPage() {
             const res = await fetch("http://localhost:8000/api/data/screen", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ entities: selectedEntities })
+                body: JSON.stringify({ entities: selectedEntities, region })
             });
 
             if (!res.ok) throw new Error("Failed to fetch screening data");
@@ -67,11 +68,27 @@ export default function ScreenerPage() {
 
             {/* Control Panel */}
             <div className="bg-white border border-slate-200 shadow-sm rounded-2xl p-6 flex flex-col md:flex-row gap-4 items-end">
-                <div className="flex-1 w-full relative z-10">
-                    <AutocompleteInput
-                        selectedEntities={selectedEntities}
-                        onChange={setSelectedEntities}
-                    />
+                <div className="flex-1 w-full relative z-10 flex flex-col md:flex-row gap-4">
+                    <div className="flex-1">
+                        <AutocompleteInput
+                            selectedEntities={selectedEntities}
+                            onChange={setSelectedEntities}
+                        />
+                    </div>
+                    <div className="w-full md:w-48">
+                        <label className="text-sm font-semibold text-slate-600 block mb-2">Region</label>
+                        <select
+                            value={region}
+                            onChange={(e) => setRegion(e.target.value)}
+                            className="w-full min-h-[52px] bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500/50 transition-all font-medium appearance-none"
+                            style={{ backgroundImage: 'url("data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%2394a3b8%22%20d%3D%22M287%2069.4a17.6%2017.6%200%200%200-13-5.4H18.4c-5%200-9.3%201.8-12.9%205.4A17.6%2017.6%200%200%200%200%2082.2c0%205%201.8%209.3%205.4%2012.9l128%20127.9c3.6%203.6%207.8%205.4%2012.8%205.4s9.2-1.8%2012.8-5.4L287%2095c3.5-3.5%205.4-7.8%205.4-12.8%200-5-1.9-9.2-5.5-12.8z%22%2F%3E%3C%2Fsvg%3E")', backgroundRepeat: 'no-repeat', backgroundPosition: 'right 1rem top 50%', backgroundSize: '0.65rem auto' }}
+                        >
+                            <option value="us">US Market</option>
+                            <option value="hk">Hong Kong</option>
+                            <option value="gb">United Kingdom</option>
+                            <option value="de">Germany</option>
+                        </select>
+                    </div>
                 </div>
                 <button
                     onClick={handleScreen}

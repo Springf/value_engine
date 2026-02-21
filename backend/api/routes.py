@@ -18,6 +18,7 @@ class Entity(BaseModel):
 
 class ScreenRequest(BaseModel):
     entities: List[Entity]
+    region: str = "us"
 
 @router.post("/screen")
 def screen_stocks(request: ScreenRequest):
@@ -30,16 +31,27 @@ def screen_stocks(request: ScreenRequest):
         if entity.type == "ticker":
             raw_tickers.add(entity.id.upper())
         elif entity.type == "sector":
-            # expand sector
+            # expand sector with regional filtering
             try:
                 import yfinance as yf
-                sector = yf.Sector(entity.id)
+                # e.g., 'technology' -> 'Technology' (Capitalized for Yahoo Finance)
+                sector_name = entity.id.replace("-", " ").title()
+                if entity.id == "financial-services":
+                    sector_name = "Financial Services"
+                
+                query = yf.EquityQuery('and', [
+                    yf.EquityQuery('eq', ['region', request.region]),
+                    yf.EquityQuery('eq', ['sector', sector_name])
+                ])
+                res = yf.screener.screen(query)
+                quotes = res.get('quotes', [])
+                
                 # Cap at 30 to avoid huge request loads
-                df = sector.top_companies
-                for t in df.index.tolist()[:30]:
-                    raw_tickers.add(t)
+                for q in quotes[:30]:
+                    if 'symbol' in q:
+                        raw_tickers.add(q['symbol'])
             except Exception as e:
-                print(f"Error expanding sector {entity.id}: {e}")
+                print(f"Error expanding sector {entity.id} in region {request.region}: {e}")
         elif entity.type == "index":
             # Expand known hardcoded index
             presets = {
@@ -195,7 +207,7 @@ def search_entities(q: str = ""):
     sectors = {
         "technology": "Technology (Sector)",
         "healthcare": "Healthcare (Sector)",
-        "financials": "Financials (Sector)",
+        "financial-services": "Financial Services (Sector)",
         "energy": "Energy (Sector)",
         "industrials": "Industrials (Sector)",
         "consumer-cyclical": "Consumer Cyclical (Sector)",
