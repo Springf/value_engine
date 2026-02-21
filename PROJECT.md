@@ -121,7 +121,7 @@ Full deep-dive for a single ticker. Combines Yahoo Finance market data with SEC 
 - HK stocks (e.g. `0700.HK`): returns Yahoo data only (no SEC)
 
 **Response includes:**
-- `market_data` — price, P/E, P/B, PEG, FCF, market cap, currency
+- `market_data` — price, P/E, P/B, PEG, FCF, market cap, currency, analyst_rating, next_earnings_date, shares_outstanding, debt_to_equity
 - `value_metrics` — DCF intrinsic value, Graham Number, margin of safety (DCF & Graham)
 - `has_sec_data` — boolean
 
@@ -142,7 +142,7 @@ Autocomplete search combining internal presets + Yahoo Finance equities.
 ### DCF (Discounted Cash Flow)
 Implemented in `calculators.py::calculate_dcf`.
 
-Assumes:
+Assumes (defaults, overriding is interactive on the frontend Analysis page):
 - **Growth rate:** 5%
 - **Discount rate:** 10%
 - **Terminal multiple:** 10×
@@ -204,7 +204,7 @@ Implemented in `models/piotroski.py`. Scores 0–9 across three pillars:
 | `/` | Dashboard — hero section + feature highlights |
 | `/screener` | Sector/ticker screener with paginated results table |
 | `/analysis` | Ticker search landing page |
-| `/analysis/[ticker]` | Deep-dive analysis for a specific stock |
+| `/analysis/[ticker]` | Deep-dive analysis with dynamic DCF recalculation and AI Investment Advice generator |
 | `/portfolio` | Portfolio tracker — tickers saved to `localStorage`, shows price + margin of safety cards |
 
 ---

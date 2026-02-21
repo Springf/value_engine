@@ -13,6 +13,8 @@ interface ScreenResult {
     pb: number | null;
     peg: number | null;
     fcf: number | null;
+    market_cap: number | null;
+    eps: number | null;
     intrinsic_value: number | null;
     graham_number: number | null;
     margin_of_safety: number | null;
@@ -21,6 +23,7 @@ interface ScreenResult {
 export default function ScreenerPage() {
     const [selectedEntities, setSelectedEntities] = useState<Entity[]>([]);
     const [region, setRegion] = useState<string>("all");
+    const [condition, setCondition] = useState<string>("or");
     const [page, setPage] = useState<number>(1);
     const [totalPages, setTotalPages] = useState<number>(1);
     const [totalCount, setTotalCount] = useState<number>(0);
@@ -38,7 +41,7 @@ export default function ScreenerPage() {
             const res = await fetch("http://localhost:8000/api/data/screen", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ entities: selectedEntities, region, page: targetPage, limit: 50 })
+                body: JSON.stringify({ entities: selectedEntities, region, condition, page: targetPage, limit: 50 })
             });
 
             if (!res.ok) throw new Error("Failed to fetch screening data");
@@ -104,6 +107,18 @@ export default function ScreenerPage() {
                             <option value="hk">Hong Kong</option>
                         </select>
                     </div>
+                    <div className="w-full md:w-48">
+                        <label className="text-sm font-semibold text-slate-600 block mb-2">Match</label>
+                        <select
+                            value={condition}
+                            onChange={(e) => setCondition(e.target.value)}
+                            className="w-full min-h-[52px] bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500/50 transition-all font-medium appearance-none"
+                            style={{ backgroundImage: 'url("data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%2394a3b8%22%20d%3D%22M287%2069.4a17.6%2017.6%200%200%200-13-5.4H18.4c-5%200-9.3%201.8-12.9%205.4A17.6%2017.6%200%200%200%200%2082.2c0%205%201.8%209.3%205.4%2012.9l128%20127.9c3.6%203.6%207.8%205.4%2012.8%205.4s9.2-1.8%2012.8-5.4L287%2095c3.5-3.5%205.4-7.8%205.4-12.8%200-5-1.9-9.2-5.5-12.8z%22%2F%3E%3C%2Fsvg%3E")', backgroundRepeat: 'no-repeat', backgroundPosition: 'right 1rem top 50%', backgroundSize: '0.65rem auto' }}
+                        >
+                            <option value="or">Any (OR)</option>
+                            <option value="and">All (AND)</option>
+                        </select>
+                    </div>
                 </div>
                 <button
                     onClick={() => handleScreen(1)}
@@ -130,11 +145,12 @@ export default function ScreenerPage() {
                                     <th className="px-6 py-4 font-bold">Ticker</th>
                                     <th className="px-6 py-4 font-bold">Company Name</th>
                                     <th className="px-6 py-4 font-bold text-right">Price</th>
+                                    <th className="px-6 py-4 font-bold text-right">Market Cap</th>
+                                    <th className="px-6 py-4 font-bold text-right">P/B</th>
                                     <th className="px-6 py-4 font-bold text-right">P/E</th>
                                     <th className="px-6 py-4 font-bold text-right">PEG</th>
+                                    <th className="px-6 py-4 font-bold text-right">EPS</th>
                                     <th className="px-6 py-4 font-bold text-right">FCF</th>
-                                    <th className="px-6 py-4 font-bold text-right">Intrinsic Val (DCF)</th>
-                                    <th className="px-6 py-4 font-bold text-right">Margin of Safety</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100 text-slate-800">
@@ -147,19 +163,12 @@ export default function ScreenerPage() {
                                         <td className="px-6 py-4 font-bold font-mono text-emerald-700">{res.ticker}</td>
                                         <td className="px-6 py-4 font-medium text-slate-600 truncate max-w-[200px]" title={res.company_name}>{res.company_name}</td>
                                         <td className="px-6 py-4 text-right font-medium">{formatNumber(res.price, "$")}</td>
+                                        <td className="px-6 py-4 text-right font-medium">{formatNumber(res.market_cap, "$")}</td>
+                                        <td className="px-6 py-4 text-right font-medium">{formatNumber(res.pb)}</td>
                                         <td className="px-6 py-4 text-right font-medium">{formatNumber(res.pe)}</td>
                                         <td className="px-6 py-4 text-right font-medium">{formatNumber(res.peg)}</td>
+                                        <td className="px-6 py-4 text-right font-medium">{formatNumber(res.eps, "$")}</td>
                                         <td className="px-6 py-4 text-right font-medium">{formatNumber(res.fcf, "$")}</td>
-                                        <td className="px-6 py-4 text-right text-emerald-600 font-bold">
-                                            {formatNumber(res.intrinsic_value, "$")}
-                                        </td>
-                                        <td className="px-6 py-4 text-right font-bold">
-                                            {res.margin_of_safety !== null ? (
-                                                <span className={`px-3 py-1.5 rounded-lg ${res.margin_of_safety > 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
-                                                    {res.margin_of_safety > 0 ? "+" : ""}{formatNumber(res.margin_of_safety, "", "%")}
-                                                </span>
-                                            ) : <span className="text-slate-400">-</span>}
-                                        </td>
                                     </tr>
                                 ))}
                             </tbody>

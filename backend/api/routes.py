@@ -4,6 +4,7 @@ from pydantic import BaseModel
 from .sec_client import SECClient
 from .yahoo_client import YahooClient
 from models.calculators import calculate_dcf, calculate_graham_number
+from .sp500_list import SP500_TICKERS
 
 router = APIRouter(prefix="/api/data", tags=["data"])
 
@@ -19,6 +20,7 @@ class Entity(BaseModel):
 class ScreenRequest(BaseModel):
     entities: List[Entity]
     region: str = "us"
+    condition: str = "or"
     page: int = 1
     limit: int = 50
 
@@ -27,11 +29,14 @@ def screen_stocks(request: ScreenRequest):
     """
     Batch evaluates a list of entities (tickers, sectors, indices) and returns their value metrics.
     """
-    # 1. Flatten entities into a unified lists of tickers
-    raw_tickers = set()
+    # 1. Gather tickers per entity
+    entity_ticker_sets = []
+    
     for entity in request.entities:
+        current_entity_tickers = set()
+        
         if entity.type == "ticker":
-            raw_tickers.add(entity.id.upper())
+            current_entity_tickers.add(entity.id.upper())
         elif entity.type == "sector":
             # expand sector with regional filtering
             try:
@@ -60,7 +65,7 @@ def screen_stocks(request: ScreenRequest):
                     quotes = res.get('quotes', [])
                     for q in quotes:
                         if 'symbol' in q:
-                            raw_tickers.add(q['symbol'])
+                            current_entity_tickers.add(q['symbol'])
                     if len(quotes) < BATCH_SIZE:
                         break  # Reached last page
                     offset += BATCH_SIZE
@@ -71,15 +76,36 @@ def screen_stocks(request: ScreenRequest):
             presets = {
                 "dow30": ["AAPL", "AMGN", "AXP", "BA", "CAT", "CRM", "CSCO", "CVX", "DIS", "DOW", "GS", "HD", "HON", "IBM", "INTC", "JNJ", "JPM", "KO", "MCD", "MMM", "MRK", "MSFT", "NKE", "PG", "TRV", "UNH", "V", "VZ", "WBA", "WMT"],
                 "nasdaq10": ["AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "TSLA", "AVGO", "PEP", "COST"],
+                "sp500": SP500_TICKERS,
                 "hk_tech": ["0700.HK", "3690.HK", "9988.HK", "1810.HK", "0981.HK", "0992.HK", "2018.HK", "9618.HK"],
                 "hk_finance": ["0005.HK", "1299.HK", "0939.HK", "1398.HK", "2318.HK", "3988.HK", "0011.HK"],
             }
             if entity.id in presets:
                 for t in presets[entity.id]:
-                    raw_tickers.add(t)
+                    current_entity_tickers.add(t)
+                    
+        entity_ticker_sets.append(current_entity_tickers)
 
-    # 2. Process all flattened tickers
-    sorted_tickers = sorted(list(raw_tickers))
+    # 2. Combine all gathered sets based on AND/OR condition
+    if not entity_ticker_sets:
+        raw_tickers = set()
+    elif request.condition == "and":
+        raw_tickers = entity_ticker_sets[0].intersection(*entity_ticker_sets[1:])
+    else:
+        raw_tickers = entity_ticker_sets[0].union(*entity_ticker_sets[1:])
+        
+    # 3. Apply Region Filter to final results (higher level filter)
+    filtered_tickers = []
+    for t in raw_tickers:
+        if request.region == "us" and "." in t:
+            continue
+        if request.region == "hk" and not t.endswith(".HK"):
+            continue
+        if request.region == "all" and ("." in t and not t.endswith(".HK")):
+            continue
+        filtered_tickers.append(t)
+        
+    sorted_tickers = sorted(filtered_tickers)
     total_count = len(sorted_tickers)
     
     offset = (request.page - 1) * request.limit
@@ -88,52 +114,21 @@ def screen_stocks(request: ScreenRequest):
     results = []
     for ticker_symbol in page_tickers:
         try:
-            # We can reuse the single stock logic or simplify it
-            # To avoid SEC rate limits during screening, we'll rely on Yahoo Finance for the screener
+            # We fetch minimal info for screener display
             yahoo_info = yahoo_client.get_stock_info(ticker_symbol)
             if not yahoo_info:
                 continue
                 
-            fcf = yahoo_info.get("free_cashflow", 0)
-            market_cap = yahoo_info.get("market_cap", 0)
-            current_price = yahoo_info.get("current_price", 0)
-            
-            shares_outstanding = 0
-            if current_price and current_price > 0 and market_cap:
-                shares_outstanding = int(market_cap / current_price)
-                
-            intrinsic_value = None
-            if fcf and fcf > 0 and shares_outstanding > 0:
-                intrinsic_value = calculate_dcf(
-                    free_cash_flow=fcf,
-                    growth_rate=0.05,
-                    discount_rate=0.10,
-                    terminal_multiple=10.0,
-                    shares_outstanding=shares_outstanding
-                )
-                
-            pb = yahoo_info.get("price_to_book")
-            pe = yahoo_info.get("trailing_pe")
-            graham_number = None
-            
-            if pb and pe and pb > 0 and pe > 0 and shares_outstanding > 0:
-                eps = current_price / pe
-                bvps = current_price / pb
-                graham_number = calculate_graham_number(eps=eps, book_value_per_share=bvps)
-                
-            margin_of_safety_dcf = round(((intrinsic_value - current_price) / intrinsic_value) * 100, 2) if intrinsic_value and current_price else None
-            
             results.append({
                 "ticker": ticker_symbol.upper(),
                 "company_name": yahoo_info.get("short_name", "Unknown Company"),
-                "price": current_price,
-                "pe": pe,
-                "pb": pb,
+                "price": yahoo_info.get("current_price", 0),
+                "pe": yahoo_info.get("trailing_pe"),
+                "pb": yahoo_info.get("price_to_book"),
                 "peg": yahoo_info.get("peg_ratio"),
-                "fcf": fcf,
-                "intrinsic_value": intrinsic_value,
-                "graham_number": graham_number,
-                "margin_of_safety": margin_of_safety_dcf
+                "fcf": yahoo_info.get("free_cashflow", 0),
+                "market_cap": yahoo_info.get("market_cap"),
+                "eps": yahoo_info.get("eps")
             })
         except Exception as e:
             print(f"Error screening {ticker_symbol}: {e}")
@@ -198,6 +193,9 @@ def get_stock_data(ticker: str):
         bvps = current_price / pb
         graham_number = calculate_graham_number(eps=eps, book_value_per_share=bvps)
         
+    # Explicitly attach shares_outstanding back to market_data for frontend usage
+    yahoo_info["shares_outstanding"] = shares_outstanding
+
     return {
         "ticker": ticker.upper(),
         "market_data": yahoo_info,
@@ -228,6 +226,7 @@ def search_entities(q: str = "", region: str = "all"):
     presets = {
         "dow30": "Dow Jones 30 (Index)",
         "nasdaq10": "Top Tech Nasdaq (Index)",
+        "sp500": "S&P 500 (Index)",
         "hk_tech": "Hong Kong Tech (Index)",
         "hk_finance": "Hong Kong Finance (Index)",
     }
@@ -251,7 +250,7 @@ def search_entities(q: str = "", region: str = "all"):
         if query in key.lower() or query in label.lower():
             if region == "us" and key in ["hk_tech", "hk_finance"]:
                 continue
-            if region == "hk" and key in ["dow30", "nasdaq10"]:
+            if region == "hk" and key in ["dow30", "nasdaq10", "sp500"]:
                 continue
             results.append({"id": key, "type": "index", "label": label})
             

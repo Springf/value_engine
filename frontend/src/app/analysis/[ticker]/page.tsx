@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
-import { Loader2, TrendingUp, DollarSign, ShieldAlert, BarChart3, PlusCircle } from "lucide-react";
+import { Loader2, TrendingUp, DollarSign, ShieldAlert, BarChart3, PlusCircle, ExternalLink, Calendar, Star, Copy, CheckCircle2 } from "lucide-react";
 
 interface StockData {
     ticker: string;
@@ -22,6 +22,15 @@ export default function AnalysisTickerPage() {
     const [data, setData] = useState<StockData | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const [copied, setCopied] = useState(false);
+
+    // DCF Assumptions State
+    const [growthRate, setGrowthRate] = useState<number>(5);
+    const [discountRate, setDiscountRate] = useState<number>(10);
+    const [terminalMultiple, setTerminalMultiple] = useState<number>(10);
+
+    // Dynamic DCF Result
+    const [dcfValue, setDcfValue] = useState<number | null>(null);
 
     useEffect(() => {
         const fetchData = async () => {
@@ -30,6 +39,7 @@ export default function AnalysisTickerPage() {
                 if (!res.ok) throw new Error("Failed to fetch stock data");
                 const json = await res.json();
                 setData(json);
+                setDcfValue(json.value_metrics.intrinsic_value_dcf);
             } catch (err: any) {
                 setError(err.message || "An error occurred");
             } finally {
@@ -38,6 +48,35 @@ export default function AnalysisTickerPage() {
         };
         if (ticker) fetchData();
     }, [ticker]);
+
+    // Recalculate DCF whenever inputs or data changes
+    useEffect(() => {
+        if (!data || !data.market_data) return;
+
+        const fcf = data.market_data.free_cashflow;
+        const shares_outstanding = data.market_data.shares_outstanding;
+
+        if (!fcf || fcf <= 0 || !shares_outstanding || shares_outstanding <= 0) {
+            setDcfValue(null);
+            return;
+        }
+
+        const g = growthRate / 100;
+        const d = discountRate / 100;
+        const tm = terminalMultiple;
+
+        let pv_fcf = 0;
+        for (let i = 1; i <= 5; i++) {
+            pv_fcf += (fcf * Math.pow(1 + g, i)) / Math.pow(1 + d, i);
+        }
+
+        const terminal_value = (fcf * Math.pow(1 + g, 5)) * tm;
+        const pv_terminal_value = terminal_value / Math.pow(1 + d, 5);
+
+        const intrinsic_value = (pv_fcf + pv_terminal_value) / shares_outstanding;
+        setDcfValue(intrinsic_value);
+
+    }, [data, growthRate, discountRate, terminalMultiple]);
 
     const saveToPortfolio = () => {
         const saved = JSON.parse(localStorage.getItem("portfolio") || "[]");
@@ -71,15 +110,51 @@ export default function AnalysisTickerPage() {
         );
     }
 
-    const mos = data.value_metrics.margin_of_safety_dcf;
+    const mos = dcfValue !== null && data.market_data.current_price
+        ? ((dcfValue - data.market_data.current_price) / dcfValue) * 100
+        : null;
+
     const isUndervalued = mos && mos > 0;
+
+    // Generate AI Prompt
+    const generatePrompt = () => {
+        if (!data) return "";
+        return `Please act as an expert value investor analyzing ${data.ticker} (${data.market_data.short_name || 'Unknown'}). 
+
+Here is the current fundamental data:
+- Current Price: ${formatCurrency(data.market_data.current_price)}
+- Market Cap: ${data.market_data.market_cap ? `$${(data.market_data.market_cap / 1e9).toFixed(2)}B` : "N/A"}
+- P/E Ratio: ${data.market_data.trailing_pe?.toFixed(2) || "N/A"}
+- P/B Ratio: ${data.market_data.price_to_book?.toFixed(2) || "N/A"}
+- PEG Ratio: ${data.market_data.peg_ratio?.toFixed(2) || "N/A"}
+- Free Cash Flow: ${data.market_data.free_cashflow ? `$${(data.market_data.free_cashflow / 1e9).toFixed(2)}B` : "N/A"}
+- EPS: ${formatCurrency(data.market_data.eps)}
+- Debt/Eq Ratio: ${data.market_data.debt_to_equity !== undefined && data.market_data.debt_to_equity !== null ? data.market_data.debt_to_equity.toFixed(2) : "N/A"}
+- Analyst Rating: ${data.market_data.analyst_rating ? data.market_data.analyst_rating.toUpperCase() : "N/A"}
+- Next Earnings: ${data.market_data.next_earnings_date || "N/A"}
+
+Valuation Models:
+1. DCF Intrinsic Value: ${formatCurrency(dcfValue)} (based on ${growthRate}% growth, ${discountRate}% discount rate, ${terminalMultiple}x terminal multiple).
+2. Graham Number: ${formatCurrency(data.value_metrics.graham_number)}.
+
+Based on Benjamin Graham and Warren Buffett's value investing principles, does this stock offer a sufficient margin of safety? 
+What are the key risks to my DCF assumptions, and what qualitative factors should I research further before investing?`;
+    };
+
+    const handleCopy = () => {
+        navigator.clipboard.writeText(generatePrompt());
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+    };
 
     return (
         <div className="flex flex-col gap-8 max-w-5xl mx-auto">
             {/* Header */}
             <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 pb-6 border-b border-slate-200">
                 <div>
-                    <h1 className="text-4xl font-bold tracking-tight font-mono text-slate-800">{data.ticker}</h1>
+                    <h1 className="text-4xl font-bold tracking-tight text-slate-800">
+                        {data.market_data.short_name || data.ticker} <span className="font-mono text-slate-400 text-2xl font-normal ml-2">{data.ticker}</span>
+                    </h1>
                     <div className="flex items-center gap-3 mt-2 text-slate-500">
                         <span className="text-2xl font-semibold text-slate-900">{formatCurrency(data.market_data.current_price)}</span>
                         <span>Market Cap: {data.market_data.market_cap ? `$${(data.market_data.market_cap / 1e9).toFixed(2)}B` : "N/A"}</span>
@@ -93,63 +168,145 @@ export default function AnalysisTickerPage() {
                 </button>
             </div>
 
-            {/* Hero Insights */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className={`p-8 rounded-3xl border relative overflow-hidden transition-transform duration-300 hover:-translate-y-1 shadow-sm hover:shadow-md ${isUndervalued ? 'bg-emerald-50/50 border-emerald-200' : 'bg-red-50/50 border-red-200'}`}>
-                    <ShieldAlert className={`absolute -right-4 -bottom-4 w-32 h-32 opacity-10 ${isUndervalued ? 'text-emerald-500' : 'text-red-500'}`} />
-                    <h3 className="text-sm font-bold uppercase tracking-wider text-slate-500">Intrinsic Value (DCF)</h3>
-                    <div className="mt-2 text-5xl font-bold tracking-tight text-slate-800">
-                        {formatCurrency(data.value_metrics.intrinsic_value_dcf)}
-                    </div>
-                    <div className="mt-4 flex items-center gap-2">
-                        <span className={`px-3 py-1.5 rounded-lg text-sm font-bold shadow-sm ${isUndervalued ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
-                            {mos !== null ? `${mos > 0 ? '+' : ''}${mos}%` : "N/A"}
-                        </span>
-                        <span className="text-sm font-medium text-slate-500">Margin of Safety</span>
-                    </div>
+            {/* Section 1: Stock Info */}
+            <div className="flex flex-col gap-4">
+                <h2 className="text-2xl font-bold text-slate-800">1. Stock Info</h2>
+                <div className="flex flex-wrap gap-3">
+                    <a
+                        href={`https://finance.yahoo.com/quote/${data.ticker}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-1.5 px-4 py-2 bg-purple-50 text-purple-700 hover:bg-purple-100 font-semibold rounded-lg text-sm transition-colors"
+                    >
+                        Yahoo Finance <ExternalLink className="w-4 h-4" />
+                    </a>
+                    {data.has_sec_data && (
+                        <a
+                            href={`https://www.sec.gov/cgi-bin/browse-edgar?CIK=${data.ticker}&action=getcompany`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex items-center gap-1.5 px-4 py-2 bg-blue-50 text-blue-700 hover:bg-blue-100 font-semibold rounded-lg text-sm transition-colors"
+                        >
+                            SEC Filings <ExternalLink className="w-4 h-4" />
+                        </a>
+                    )}
+                    {data.ticker.endsWith('.HK') && (
+                        <a
+                            href={`https://www.hkex.com.hk/Market-Data/Securities-Prices/Equities/Equities-Quote?sym=${parseInt(data.ticker.replace('.HK', ''), 10)}&sc_lang=en`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex items-center gap-1.5 px-4 py-2 bg-rose-50 text-rose-700 hover:bg-rose-100 font-semibold rounded-lg text-sm transition-colors"
+                        >
+                            HKEX <ExternalLink className="w-4 h-4" />
+                        </a>
+                    )}
                 </div>
 
-                <div className="p-8 rounded-3xl border border-slate-200 bg-white shadow-sm hover:shadow-md transition-transform duration-300 hover:-translate-y-1 relative overflow-hidden">
-                    <div className="absolute top-0 right-0 w-32 h-32 bg-purple-50 rounded-full blur-3xl -mr-10 -mt-10 pointer-events-none"></div>
-                    <h3 className="text-sm font-bold uppercase tracking-wider text-slate-500 relative z-10">Graham Number</h3>
-                    <div className="mt-2 text-5xl font-bold tracking-tight text-purple-600 relative z-10">
-                        {formatCurrency(data.value_metrics.graham_number)}
-                    </div>
-                    <div className="mt-4 flex flex-col gap-1 text-sm text-slate-500 relative z-10">
-                        <p>Benjamin Graham's defensive price limit.</p>
-                        <p className="font-mono bg-slate-50 text-slate-600 px-2 py-1 rounded inline-block w-max">sqrt(22.5 × EPS × BVPS)</p>
-                    </div>
-                </div>
-            </div>
-
-            {/* Details Grid */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                {[
-                    { label: "P/E Ratio", value: data.market_data.trailing_pe?.toFixed(2), icon: TrendingUp },
-                    { label: "P/B Ratio", value: data.market_data.price_to_book?.toFixed(2), icon: BarChart3 },
-                    { label: "PEG Ratio", value: data.market_data.peg_ratio?.toFixed(2), icon: TrendingUp },
-                    { label: "Free Cash Flow", value: data.market_data.free_cashflow ? `$${(data.market_data.free_cashflow / 1e9).toFixed(2)}B` : null, icon: DollarSign },
-                ].map((stat, i) => (
-                    <div key={i} className="bg-white border border-slate-200 p-5 rounded-2xl flex flex-col gap-3 shadow-sm hover:shadow-md transition-shadow">
-                        <div className="flex items-center gap-2 text-slate-500">
-                            <stat.icon className="w-4 h-4 text-emerald-500" />
-                            <span className="text-xs uppercase tracking-wider font-bold">{stat.label}</span>
+                <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4 mt-2">
+                    {[
+                        { label: "P/E Ratio", value: data.market_data.trailing_pe?.toFixed(2), icon: TrendingUp },
+                        { label: "P/B Ratio", value: data.market_data.price_to_book?.toFixed(2), icon: BarChart3 },
+                        { label: "PEG Ratio", value: data.market_data.peg_ratio?.toFixed(2), icon: TrendingUp },
+                        { label: "EPS", value: formatCurrency(data.market_data.eps), icon: DollarSign },
+                        { label: "Free Cash Flow", value: data.market_data.free_cashflow ? `$${(data.market_data.free_cashflow / 1e9).toFixed(2)}B` : null, icon: DollarSign },
+                        { label: "Debt/Eq Ratio", value: data.market_data.debt_to_equity !== undefined && data.market_data.debt_to_equity !== null ? data.market_data.debt_to_equity.toFixed(2) : "N/A", icon: BarChart3 },
+                        { label: "Analyst Rating", value: data.market_data.analyst_rating ? data.market_data.analyst_rating.toUpperCase() : "N/A", icon: Star },
+                        { label: "Next Earnings", value: data.market_data.next_earnings_date || "N/A", icon: Calendar },
+                    ].map((stat, i) => (
+                        <div key={i} className={`bg-white border border-slate-200 p-4 rounded-2xl flex flex-col justify-between shadow-sm hover:shadow-md transition-shadow ${stat.label === "Next Earnings" || stat.label === "Analyst Rating" ? "col-span-2 md:col-span-2 lg:col-span-3" : "col-span-2 md:col-span-2 lg:col-span-2"}`}>
+                            <div className="flex items-center gap-2 text-slate-500 mb-2">
+                                <stat.icon className="w-4 h-4 text-emerald-500" />
+                                <span className="text-xs uppercase tracking-wider font-bold">{stat.label}</span>
+                            </div>
+                            <span className="text-xl font-bold text-slate-800 truncate" title={stat.value?.toString() || "N/A"}>{stat.value || "N/A"}</span>
                         </div>
-                        <span className="text-2xl font-bold text-slate-800">{stat.value || "N/A"}</span>
-                    </div>
-                ))}
+                    ))}
+                </div>
             </div>
 
-            {data.has_sec_data && (
-                <div className="bg-blue-50 border border-blue-200 p-6 rounded-2xl shadow-sm">
-                    <h3 className="text-lg font-bold text-blue-800 flex items-center gap-2">
-                        SEC EDGAR Data Available
-                    </h3>
-                    <p className="text-sm text-blue-600 mt-2">
-                        This US entity has raw fundamentals cached from SEC filings. Advanced parsing for Piotroski F-Score can process this data.
-                    </p>
+            {/* Section 2: Valuation Metrics */}
+            <div className="flex flex-col gap-4 mt-4">
+                <h2 className="text-2xl font-bold text-slate-800">2. Valuation Metrics</h2>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className={`p-8 rounded-3xl border relative overflow-hidden transition-transform duration-300 hover:-translate-y-1 shadow-sm hover:shadow-md ${isUndervalued ? 'bg-emerald-50/50 border-emerald-200' : 'bg-red-50/50 border-red-200'}`}>
+                        <ShieldAlert className={`absolute -right-4 -bottom-4 w-32 h-32 opacity-10 ${isUndervalued ? 'text-emerald-500' : 'text-red-500'}`} />
+                        <h3 className="text-sm font-bold uppercase tracking-wider text-slate-500">Intrinsic Value (DCF)</h3>
+                        <div className="mt-2 text-5xl font-bold tracking-tight text-slate-800">
+                            {formatCurrency(dcfValue)}
+                        </div>
+                        <div className="mt-4 flex items-center gap-2">
+                            <span className={`px-3 py-1.5 rounded-lg text-sm font-bold shadow-sm ${isUndervalued ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
+                                {mos !== null ? `${mos > 0 ? '+' : ''}${mos}%` : "N/A"}
+                            </span>
+                            <span className="text-sm font-medium text-slate-500">Margin of Safety</span>
+                        </div>
+
+                        {/* Interactive Assumptions */}
+                        <div className="mt-6 pt-6 border-t border-slate-200/50">
+                            <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-3 block">Model Assumptions</h4>
+                            <div className="grid grid-cols-3 gap-3">
+                                <div>
+                                    <label className="text-xs font-medium text-slate-500 block mb-1">Growth (Y1-5)</label>
+                                    <div className="relative">
+                                        <input type="number" value={growthRate} onChange={(e) => setGrowthRate(Number(e.target.value))} className="w-full bg-white border border-slate-200 rounded-lg py-1.5 px-3 text-sm font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500 pr-8" />
+                                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm font-bold">%</span>
+                                    </div>
+                                </div>
+                                <div>
+                                    <label className="text-xs font-medium text-slate-500 block mb-1">Discount Rate</label>
+                                    <div className="relative">
+                                        <input type="number" value={discountRate} onChange={(e) => setDiscountRate(Number(e.target.value))} className="w-full bg-white border border-slate-200 rounded-lg py-1.5 px-3 text-sm font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500 pr-8" />
+                                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm font-bold">%</span>
+                                    </div>
+                                </div>
+                                <div>
+                                    <label className="text-xs font-medium text-slate-500 block mb-1">Term. Multiple</label>
+                                    <div className="relative">
+                                        <input type="number" value={terminalMultiple} onChange={(e) => setTerminalMultiple(Number(e.target.value))} className="w-full bg-white border border-slate-200 rounded-lg py-1.5 px-3 text-sm font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500 pr-6" />
+                                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm font-bold">x</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="p-8 rounded-3xl border border-slate-200 bg-white shadow-sm hover:shadow-md transition-transform duration-300 hover:-translate-y-1 relative overflow-hidden">
+                        <div className="absolute top-0 right-0 w-32 h-32 bg-purple-50 rounded-full blur-3xl -mr-10 -mt-10 pointer-events-none"></div>
+                        <h3 className="text-sm font-bold uppercase tracking-wider text-slate-500 relative z-10">Graham Number</h3>
+                        <div className="mt-2 text-5xl font-bold tracking-tight text-purple-600 relative z-10">
+                            {formatCurrency(data.value_metrics.graham_number)}
+                        </div>
+                        <div className="mt-4 flex flex-col gap-1 text-sm text-slate-500 relative z-10">
+                            <p>Benjamin Graham's defensive price limit.</p>
+                            <p className="font-mono bg-slate-50 text-slate-600 px-2 py-1 rounded inline-block w-max">sqrt(22.5 × EPS × BVPS)</p>
+                        </div>
+                    </div>
                 </div>
-            )}
+
+            </div>
+
+            {/* Section 3: AI Investment Advice */}
+            <div className="flex flex-col gap-4 mt-4">
+                <div className="flex items-center justify-between">
+                    <h2 className="text-2xl font-bold text-slate-800">3. AI Investment Advice</h2>
+                    <button
+                        onClick={handleCopy}
+                        className="flex items-center gap-2 px-4 py-2 bg-slate-900 text-white hover:bg-slate-800 transition-colors rounded-lg text-sm font-semibold shadow-sm"
+                    >
+                        {copied ? <CheckCircle2 className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4 text-slate-300" />}
+                        {copied ? "Copied!" : "Copy Prompt"}
+                    </button>
+                </div>
+                <div className="bg-slate-50 border border-slate-200 rounded-2xl p-6 relative group">
+                    <p className="text-sm font-medium text-slate-500 mb-4">
+                        Copy this automatically generated prompt and paste it into ChatGPT, Claude, or Gemini for a qualitative analysis of this stock based on live data.
+                    </p>
+                    <pre className="whitespace-pre-wrap font-mono text-sm text-slate-700 bg-white border border-slate-200 p-5 rounded-xl overflow-x-auto shadow-inner leading-relaxed">
+                        {generatePrompt()}
+                    </pre>
+                </div>
+            </div>
+
         </div>
     );
 }

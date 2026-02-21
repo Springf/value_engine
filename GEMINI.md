@@ -42,7 +42,7 @@ npm run dev
 
 ## Value Models
 
-- **DCF:** 5 year projection, 5% growth, 10% discount rate, 10× terminal multiple
+- **DCF:** 5 year projection, 5% growth, 10% discount rate, 10× terminal multiple (assumptions are interactive and recalculable on the Analysis frontend)
 - **Graham Number:** `√(22.5 × EPS × BVPS)`
 - **Margin of Safety:** `(intrinsic_value - price) / intrinsic_value × 100`
 
@@ -56,3 +56,4 @@ npm run dev
 - Sector expansion paginates the Yahoo screener in batches of 250 (Yahoo's per-call max) using `yf.screener.screen(query, size=250, offset=N)` to collect all tickers before slicing for the page.
 - The `piotroski.py` score is implemented but **not yet surfaced in the frontend**.
 - CORS is configured to allow only `http://localhost:3000`.
+- The Analysis page (`/analysis/[ticker]`) includes an "AI Investment Advice" block which automatically formats a markdown prompt with live fundamental data for pasting into LLMs.
