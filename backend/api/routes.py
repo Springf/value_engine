@@ -134,3 +134,37 @@ def get_stock_data(ticker: str):
         },
         "has_sec_data": sec_data is not None
     }
+
+@router.get("/presets")
+def get_presets(category: str = "technology"):
+    """
+    Returns a predefined list of tickers based on a category (index or sector).
+    Categories like 'dow30' or 'hk_tech' are hardcoded.
+    Standard GICS sectors query yfinance.Sector objects.
+    """
+    category = category.lower()
+    
+    # Hardcoded Indexes / Custom lists
+    presets = {
+        "dow30": ["AAPL", "AMGN", "AXP", "BA", "CAT", "CRM", "CSCO", "CVX", "DIS", "DOW", "GS", "HD", "HON", "IBM", "INTC", "JNJ", "JPM", "KO", "MCD", "MMM", "MRK", "MSFT", "NKE", "PG", "TRV", "UNH", "V", "VZ", "WBA", "WMT"],
+        "nasdaq10": ["AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "TSLA", "AVGO", "PEP", "COST"],
+        "hk_tech": ["0700.HK", "3690.HK", "9988.HK", "1810.HK", "0981.HK", "0992.HK", "2018.HK", "9618.HK"],
+        "hk_finance": ["0005.HK", "1299.HK", "0939.HK", "1398.HK", "2318.HK", "3988.HK", "0011.HK"],
+    }
+    
+    if category in presets:
+        return {"category": category, "tickers": presets[category]}
+        
+    # YFinance Sectors
+    # E.g. technology, healthcare, financials, energy, industrials, consumer-cyclical
+    try:
+        import yfinance as yf
+        sector = yf.Sector(category)
+        # Fetch top 30 companies to avoid overwhelming the screener
+        df = sector.top_companies
+        tickers = df.index.tolist()[:30]
+        return {"category": category, "tickers": tickers}
+    except Exception as e:
+        print(f"Error fetching sector {category}: {e}")
+        # Default fallback
+        return {"category": category, "tickers": ["AAPL", "MSFT", "GOOGL"]}

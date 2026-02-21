@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Search, Loader2 } from "lucide-react";
+import { Search, Loader2, Sparkles } from "lucide-react";
 
 interface ScreenResult {
     ticker: string;
@@ -19,7 +19,35 @@ export default function ScreenerPage() {
     const [tickersInput, setTickersInput] = useState("AAPL, MSFT, GOOGL, 0700.HK");
     const [results, setResults] = useState<ScreenResult[]>([]);
     const [loading, setLoading] = useState(false);
+    const [presetLoading, setPresetLoading] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
+
+    const PRESETS = [
+        { id: "dow30", label: "Dow 30" },
+        { id: "nasdaq10", label: "Top Tech (Nasdaq)" },
+        { id: "technology", label: "US Tech Sector" },
+        { id: "healthcare", label: "US Healthcare" },
+        { id: "financials", label: "US Financials" },
+        { id: "hk_tech", label: "HK Tech" },
+        { id: "hk_finance", label: "HK Finance" }
+    ];
+
+    const handlePresetSelect = async (presetId: string) => {
+        setPresetLoading(presetId);
+        setError(null);
+        try {
+            const res = await fetch(`http://localhost:8000/api/data/presets?category=${presetId}`);
+            if (!res.ok) throw new Error("Failed to load preset");
+            const data = await res.json();
+            if (data.tickers && data.tickers.length > 0) {
+                setTickersInput(data.tickers.join(", "));
+            }
+        } catch (err: any) {
+            setError("Failed to load preset tickers.");
+        } finally {
+            setPresetLoading(null);
+        }
+    };
 
     const handleScreen = async () => {
         setLoading(true);
@@ -60,27 +88,52 @@ export default function ScreenerPage() {
             </div>
 
             {/* Control Panel */}
-            <div className="bg-white border border-slate-200 shadow-sm rounded-2xl p-6 flex flex-col md:flex-row gap-4 items-end">
-                <div className="flex-1 w-full space-y-2">
-                    <label className="text-sm font-semibold text-slate-600">Tickers (comma separated)</label>
-                    <div className="relative group">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400 group-focus-within:text-emerald-500 transition-colors" />
-                        <input
-                            type="text"
-                            value={tickersInput}
-                            onChange={(e) => setTickersInput(e.target.value)}
-                            className="w-full bg-slate-50 border border-slate-200 text-slate-900 rounded-xl py-3 pl-11 pr-4 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500/50 transition-all font-mono"
-                            placeholder="e.g. AAPL, MSFT, 0700.HK"
-                        />
+            <div className="bg-white border border-slate-200 shadow-sm rounded-2xl p-6 flex flex-col gap-6">
+
+                {/* Presets Row */}
+                <div className="flex flex-col gap-3">
+                    <label className="text-sm font-semibold text-slate-600 flex items-center gap-2">
+                        <Sparkles className="w-4 h-4 text-emerald-500" />
+                        Quick Select Presets
+                    </label>
+                    <div className="flex flex-wrap gap-2">
+                        {PRESETS.map((preset) => (
+                            <button
+                                key={preset.id}
+                                onClick={() => handlePresetSelect(preset.id)}
+                                disabled={presetLoading !== null}
+                                className="px-4 py-2 text-sm font-medium rounded-full border border-slate-200 bg-slate-50 text-slate-700 hover:bg-emerald-50 hover:text-emerald-700 hover:border-emerald-200 transition-colors disabled:opacity-50 flex items-center gap-2"
+                            >
+                                {presetLoading === preset.id && <Loader2 className="w-3 h-3 animate-spin" />}
+                                {preset.label}
+                            </button>
+                        ))}
                     </div>
                 </div>
-                <button
-                    onClick={handleScreen}
-                    disabled={loading}
-                    className="w-full md:w-auto flex items-center justify-center gap-2 bg-emerald-500 hover:bg-emerald-600 shadow-md shadow-emerald-500/20 disabled:bg-emerald-500/50 disabled:shadow-none text-white px-8 py-3 rounded-xl font-bold transition-all hover:-translate-y-0.5"
-                >
-                    {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : "Run Screen"}
-                </button>
+
+                {/* Input Row */}
+                <div className="flex flex-col md:flex-row gap-4 items-end">
+                    <div className="flex-1 w-full space-y-2">
+                        <label className="text-sm font-semibold text-slate-600">Tickers (comma separated)</label>
+                        <div className="relative group">
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400 group-focus-within:text-emerald-500 transition-colors" />
+                            <input
+                                type="text"
+                                value={tickersInput}
+                                onChange={(e) => setTickersInput(e.target.value)}
+                                className="w-full bg-slate-50 border border-slate-200 text-slate-900 rounded-xl py-3 pl-11 pr-4 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500/50 transition-all font-mono"
+                                placeholder="e.g. AAPL, MSFT, 0700.HK"
+                            />
+                        </div>
+                    </div>
+                    <button
+                        onClick={handleScreen}
+                        disabled={loading || presetLoading !== null}
+                        className="w-full md:w-auto flex items-center justify-center gap-2 bg-emerald-500 hover:bg-emerald-600 shadow-md shadow-emerald-500/20 disabled:bg-emerald-500/50 disabled:shadow-none text-white px-8 py-3 rounded-xl font-bold transition-all hover:-translate-y-0.5"
+                    >
+                        {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : "Run Screen"}
+                    </button>
+                </div>
             </div>
 
             {error && (
