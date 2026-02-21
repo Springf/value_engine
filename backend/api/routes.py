@@ -252,6 +252,8 @@ def search_entities(q: str = "", region: str = "all"):
                         continue # Skip non-US explicitly
                     if region == "hk" and not symbol.endswith(".HK"):
                         continue # Skip non-HK
+                    if region == "all" and ("." in symbol and not symbol.endswith(".HK")):
+                        continue # For all, only allow US (no dot) and HK (.HK)
                         
                     results.append({
                         "id": symbol,
