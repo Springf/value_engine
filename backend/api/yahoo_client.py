@@ -12,6 +12,7 @@ class YahooClient:
             
             return {
                 "ticker": ticker,
+                "short_name": info.get("shortName", info.get("longName", "Unknown Company")),
                 "current_price": info.get("currentPrice", info.get("regularMarketPrice")),
                 "forward_pe": info.get("forwardPE"),
                 "trailing_pe": info.get("trailingPE", info.get("forwardPE")),

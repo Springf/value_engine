@@ -2,10 +2,12 @@
 
 import { useState } from "react";
 import { Loader2 } from "lucide-react";
+import { useRouter } from "next/navigation";
 import AutocompleteInput, { Entity } from "./autocomplete";
 
 interface ScreenResult {
     ticker: string;
+    company_name: string;
     price: number | null;
     pe: number | null;
     pb: number | null;
@@ -22,10 +24,11 @@ export default function ScreenerPage() {
         { id: "MSFT", type: "ticker", label: "Microsoft Corporation" },
         { id: "GOOGL", type: "ticker", label: "Alphabet Inc." }
     ]);
-    const [region, setRegion] = useState<string>("us");
+    const [region, setRegion] = useState<string>("all");
     const [results, setResults] = useState<ScreenResult[]>([]);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const router = useRouter();
 
     const handleScreen = async () => {
         if (selectedEntities.length === 0) return;
@@ -41,7 +44,10 @@ export default function ScreenerPage() {
 
             if (!res.ok) throw new Error("Failed to fetch screening data");
             const data = await res.json();
-            setResults(data.results);
+
+            // Sort results alphabetically by ticker
+            const sortedResults = data.results.sort((a: ScreenResult, b: ScreenResult) => a.ticker.localeCompare(b.ticker));
+            setResults(sortedResults);
         } catch (err: any) {
             setError(err.message || "An unexpected error occurred");
         } finally {
@@ -73,6 +79,7 @@ export default function ScreenerPage() {
                         <AutocompleteInput
                             selectedEntities={selectedEntities}
                             onChange={setSelectedEntities}
+                            region={region}
                         />
                     </div>
                     <div className="w-full md:w-48">
@@ -113,6 +120,7 @@ export default function ScreenerPage() {
                             <thead className="bg-slate-50 text-slate-600 text-xs uppercase tracking-wider border-b border-slate-200">
                                 <tr>
                                     <th className="px-6 py-4 font-bold">Ticker</th>
+                                    <th className="px-6 py-4 font-bold">Company Name</th>
                                     <th className="px-6 py-4 font-bold text-right">Price</th>
                                     <th className="px-6 py-4 font-bold text-right">P/E</th>
                                     <th className="px-6 py-4 font-bold text-right">PEG</th>
@@ -123,8 +131,13 @@ export default function ScreenerPage() {
                             </thead>
                             <tbody className="divide-y divide-slate-100 text-slate-800">
                                 {results.map((res) => (
-                                    <tr key={res.ticker} className="hover:bg-slate-50/80 transition-colors">
+                                    <tr
+                                        key={res.ticker}
+                                        onClick={() => router.push(`/analysis/${res.ticker}`)}
+                                        className="hover:bg-emerald-50/80 transition-colors cursor-pointer"
+                                    >
                                         <td className="px-6 py-4 font-bold font-mono text-emerald-700">{res.ticker}</td>
+                                        <td className="px-6 py-4 font-medium text-slate-600 truncate max-w-[200px]" title={res.company_name}>{res.company_name}</td>
                                         <td className="px-6 py-4 text-right font-medium">{formatNumber(res.price, "$")}</td>
                                         <td className="px-6 py-4 text-right font-medium">{formatNumber(res.pe)}</td>
                                         <td className="px-6 py-4 text-right font-medium">{formatNumber(res.peg)}</td>

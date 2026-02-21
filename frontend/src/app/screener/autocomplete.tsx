@@ -12,9 +12,10 @@ export interface Entity {
 interface AutocompleteProps {
     selectedEntities: Entity[];
     onChange: (entities: Entity[]) => void;
+    region: string;
 }
 
-export default function AutocompleteInput({ selectedEntities, onChange }: AutocompleteProps) {
+export default function AutocompleteInput({ selectedEntities, onChange, region }: AutocompleteProps) {
     const [query, setQuery] = useState("");
     const [suggestions, setSuggestions] = useState<Entity[]>([]);
     const [loading, setLoading] = useState(false);
@@ -41,7 +42,7 @@ export default function AutocompleteInput({ selectedEntities, onChange }: Autoco
 
         setLoading(true);
         try {
-            const res = await fetch(`http://localhost:8000/api/data/search?q=${encodeURIComponent(searchQuery)}`);
+            const res = await fetch(`http://localhost:8000/api/data/search?q=${encodeURIComponent(searchQuery)}&region=${region}`);
             if (res.ok) {
                 const data = await res.json();
                 setSuggestions(data.results || []);

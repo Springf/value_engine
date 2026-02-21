@@ -39,10 +39,11 @@ def screen_stocks(request: ScreenRequest):
                 if entity.id == "financial-services":
                     sector_name = "Financial Services"
                 
-                query = yf.EquityQuery('and', [
-                    yf.EquityQuery('eq', ['region', request.region]),
-                    yf.EquityQuery('eq', ['sector', sector_name])
-                ])
+                query_args = [yf.EquityQuery('eq', ['sector', sector_name])]
+                if request.region != "all":
+                    query_args.append(yf.EquityQuery('eq', ['region', request.region]))
+                
+                query = yf.EquityQuery('and', query_args) if len(query_args) > 1 else query_args[0]
                 res = yf.screener.screen(query)
                 quotes = res.get('quotes', [])
                 
@@ -105,6 +106,7 @@ def screen_stocks(request: ScreenRequest):
             
             results.append({
                 "ticker": ticker_symbol.upper(),
+                "company_name": yahoo_info.get("short_name", "Unknown Company"),
                 "price": current_price,
                 "pe": pe,
                 "pb": pb,
@@ -183,10 +185,11 @@ def get_stock_data(ticker: str):
     }
 
 @router.get("/search")
-def search_entities(q: str = ""):
+def search_entities(q: str = "", region: str = "all"):
     """
     Intelligent autocomplete search for tickers, sectors, and indices.
     Combines Yahoo Finance search API with our internal category lists.
+    Filters out unsupported regions based on `region`.
     """
     if not q or len(q) < 2:
         return {"results": []}
@@ -220,6 +223,10 @@ def search_entities(q: str = ""):
     
     for key, label in presets.items():
         if query in key.lower() or query in label.lower():
+            if region == "us" and key == "hk_tech":
+                continue
+            if region == "hk" and key in ["dow30", "nasdaq100"]:
+                continue
             results.append({"id": key, "type": "index", "label": label})
             
     for key, label in sectors.items():
@@ -237,8 +244,15 @@ def search_entities(q: str = ""):
             for quote in quotes:
                 # We only want Equities and ETFs for our app
                 if quote.get("quoteType") in ["EQUITY", "ETF"]:
-                    symbol = quote.get("symbol")
+                    symbol = quote.get("symbol", "")
                     shortname = quote.get("shortname", "Unknown")
+                    
+                    # Filter by Region if provided
+                    if region == "us" and "." in symbol:
+                        continue # Skip non-US explicitly
+                    if region == "hk" and not symbol.endswith(".HK"):
+                        continue # Skip non-HK
+                        
                     results.append({
                         "id": symbol,
                         "type": "ticker",
