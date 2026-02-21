@@ -49,11 +49,11 @@ def screen_stocks(request: ScreenRequest):
                     ]))
                 
                 query = yf.EquityQuery('and', query_args) if len(query_args) > 1 else query_args[0]
-                res = yf.screener.screen(query)
+                res = yf.screener.screen(query, count=200) # Fetch up to 200 stocks per sector
                 quotes = res.get('quotes', [])
                 
-                # Cap at 30 to avoid huge request loads
-                for q in quotes[:30]:
+                # Cap loosely to avoid API rate limits but allow a large number
+                for q in quotes[:200]:
                     if 'symbol' in q:
                         raw_tickers.add(q['symbol'])
             except Exception as e:
@@ -240,7 +240,7 @@ def search_entities(q: str = "", region: str = "all"):
             
     # 2. Search Yahoo Finance for Individual Equities
     try:
-        url = f"https://query2.finance.yahoo.com/v1/finance/search?q={query}"
+        url = f"https://query2.finance.yahoo.com/v1/finance/search?q={query}&quotesCount=100"
         headers = {'User-Agent': 'Mozilla/5.0'}
         res = requests.get(url, headers=headers, timeout=5)
         if res.status_code == 200:
@@ -268,4 +268,4 @@ def search_entities(q: str = "", region: str = "all"):
     except Exception as e:
         print(f"Error searching Yahoo Finance for {query}: {e}")
         
-    return {"results": results[:20] if len(results) > 20 else results} # Limit to top 20 suggestions
+    return {"results": results[:100] if len(results) > 100 else results} # Limit increased to 100
