@@ -10,16 +10,51 @@ router = APIRouter(prefix="/api/data", tags=["data"])
 sec_client = SECClient()
 yahoo_client = YahooClient()
 
+import requests
+
+class Entity(BaseModel):
+    id: str  # e.g. 'AAPL' or 'technology'
+    type: str  # 'ticker', 'sector', or 'index'
+
 class ScreenRequest(BaseModel):
-    tickers: List[str]
+    entities: List[Entity]
 
 @router.post("/screen")
 def screen_stocks(request: ScreenRequest):
     """
-    Batch evaluates a list of tickers and returns their value metrics.
+    Batch evaluates a list of entities (tickers, sectors, indices) and returns their value metrics.
     """
+    # 1. Flatten entities into a unified lists of tickers
+    raw_tickers = set()
+    for entity in request.entities:
+        if entity.type == "ticker":
+            raw_tickers.add(entity.id.upper())
+        elif entity.type == "sector":
+            # expand sector
+            try:
+                import yfinance as yf
+                sector = yf.Sector(entity.id)
+                # Cap at 30 to avoid huge request loads
+                df = sector.top_companies
+                for t in df.index.tolist()[:30]:
+                    raw_tickers.add(t)
+            except Exception as e:
+                print(f"Error expanding sector {entity.id}: {e}")
+        elif entity.type == "index":
+            # Expand known hardcoded index
+            presets = {
+                "dow30": ["AAPL", "AMGN", "AXP", "BA", "CAT", "CRM", "CSCO", "CVX", "DIS", "DOW", "GS", "HD", "HON", "IBM", "INTC", "JNJ", "JPM", "KO", "MCD", "MMM", "MRK", "MSFT", "NKE", "PG", "TRV", "UNH", "V", "VZ", "WBA", "WMT"],
+                "nasdaq10": ["AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "TSLA", "AVGO", "PEP", "COST"],
+                "hk_tech": ["0700.HK", "3690.HK", "9988.HK", "1810.HK", "0981.HK", "0992.HK", "2018.HK", "9618.HK"],
+                "hk_finance": ["0005.HK", "1299.HK", "0939.HK", "1398.HK", "2318.HK", "3988.HK", "0011.HK"],
+            }
+            if entity.id in presets:
+                for t in presets[entity.id]:
+                    raw_tickers.add(t)
+
     results = []
-    for ticker_symbol in request.tickers:
+    # 2. Process all flattened tickers
+    for ticker_symbol in list(raw_tickers):
         try:
             # We can reuse the single stock logic or simplify it
             # To avoid SEC rate limits during screening, we'll rely on Yahoo Finance for the screener
@@ -135,36 +170,69 @@ def get_stock_data(ticker: str):
         "has_sec_data": sec_data is not None
     }
 
-@router.get("/presets")
-def get_presets(category: str = "technology"):
+@router.get("/search")
+def search_entities(q: str = ""):
     """
-    Returns a predefined list of tickers based on a category (index or sector).
-    Categories like 'dow30' or 'hk_tech' are hardcoded.
-    Standard GICS sectors query yfinance.Sector objects.
+    Intelligent autocomplete search for tickers, sectors, and indices.
+    Combines Yahoo Finance search API with our internal category lists.
     """
-    category = category.lower()
+    if not q or len(q) < 2:
+        return {"results": []}
+        
+    query = q.lower()
+    results = []
     
-    # Hardcoded Indexes / Custom lists
+    # 1. Search Internal Presets (Indices & Sectors)
+    # Hardcoded Indexes
     presets = {
-        "dow30": ["AAPL", "AMGN", "AXP", "BA", "CAT", "CRM", "CSCO", "CVX", "DIS", "DOW", "GS", "HD", "HON", "IBM", "INTC", "JNJ", "JPM", "KO", "MCD", "MMM", "MRK", "MSFT", "NKE", "PG", "TRV", "UNH", "V", "VZ", "WBA", "WMT"],
-        "nasdaq10": ["AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "TSLA", "AVGO", "PEP", "COST"],
-        "hk_tech": ["0700.HK", "3690.HK", "9988.HK", "1810.HK", "0981.HK", "0992.HK", "2018.HK", "9618.HK"],
-        "hk_finance": ["0005.HK", "1299.HK", "0939.HK", "1398.HK", "2318.HK", "3988.HK", "0011.HK"],
+        "dow30": "Dow Jones 30 (Index)",
+        "nasdaq10": "Top Tech Nasdaq (Index)",
+        "hk_tech": "Hong Kong Tech (Index)",
+        "hk_finance": "Hong Kong Finance (Index)",
     }
     
-    if category in presets:
-        return {"category": category, "tickers": presets[category]}
-        
-    # YFinance Sectors
-    # E.g. technology, healthcare, financials, energy, industrials, consumer-cyclical
+    # Standard GICS sectors
+    sectors = {
+        "technology": "Technology (Sector)",
+        "healthcare": "Healthcare (Sector)",
+        "financials": "Financials (Sector)",
+        "energy": "Energy (Sector)",
+        "industrials": "Industrials (Sector)",
+        "consumer-cyclical": "Consumer Cyclical (Sector)",
+        "consumer-defensive": "Consumer Defensive (Sector)",
+        "utilities": "Utilities (Sector)",
+        "real-estate": "Real Estate (Sector)",
+        "communication-services": "Communication Services (Sector)",
+        "basic-materials": "Basic Materials (Sector)"
+    }
+    
+    for key, label in presets.items():
+        if query in key.lower() or query in label.lower():
+            results.append({"id": key, "type": "index", "label": label})
+            
+    for key, label in sectors.items():
+        if query in key.lower() or query in label.lower():
+            results.append({"id": key, "type": "sector", "label": label})
+            
+    # 2. Search Yahoo Finance for Individual Equities
     try:
-        import yfinance as yf
-        sector = yf.Sector(category)
-        # Fetch top 30 companies to avoid overwhelming the screener
-        df = sector.top_companies
-        tickers = df.index.tolist()[:30]
-        return {"category": category, "tickers": tickers}
+        url = f"https://query2.finance.yahoo.com/v1/finance/search?q={query}"
+        headers = {'User-Agent': 'Mozilla/5.0'}
+        res = requests.get(url, headers=headers, timeout=5)
+        if res.status_code == 200:
+            data = res.json()
+            quotes = data.get("quotes", [])
+            for quote in quotes:
+                # We only want Equities and ETFs for our app
+                if quote.get("quoteType") in ["EQUITY", "ETF"]:
+                    symbol = quote.get("symbol")
+                    shortname = quote.get("shortname", "Unknown")
+                    results.append({
+                        "id": symbol,
+                        "type": "ticker",
+                        "label": f"{symbol} - {shortname}"
+                    })
     except Exception as e:
-        print(f"Error fetching sector {category}: {e}")
-        # Default fallback
-        return {"category": category, "tickers": ["AAPL", "MSFT", "GOOGL"]}
+        print(f"Error searching Yahoo Finance for {query}: {e}")
+        
+    return {"results": results[:20] if len(results) > 20 else results} # Limit to top 20 suggestions
