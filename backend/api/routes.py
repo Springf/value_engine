@@ -51,13 +51,19 @@ def screen_stocks(request: ScreenRequest):
                     ]))
                 
                 query = yf.EquityQuery('and', query_args) if len(query_args) > 1 else query_args[0]
-                res = yf.screener.screen(query, count=200) # Fetch up to 200 stocks per sector
-                quotes = res.get('quotes', [])
                 
-                # Cap loosely to avoid API rate limits but allow a large number
-                for q in quotes[:200]:
-                    if 'symbol' in q:
-                        raw_tickers.add(q['symbol'])
+                # Paginate yfinance screener to collect ALL tickers (Yahoo max = 250 per call)
+                BATCH_SIZE = 250
+                offset = 0
+                while True:
+                    res = yf.screener.screen(query, size=BATCH_SIZE, offset=offset)
+                    quotes = res.get('quotes', [])
+                    for q in quotes:
+                        if 'symbol' in q:
+                            raw_tickers.add(q['symbol'])
+                    if len(quotes) < BATCH_SIZE:
+                        break  # Reached last page
+                    offset += BATCH_SIZE
             except Exception as e:
                 print(f"Error expanding sector {entity.id} in region {request.region}: {e}")
         elif entity.type == "index":
