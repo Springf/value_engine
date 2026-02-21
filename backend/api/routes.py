@@ -42,6 +42,11 @@ def screen_stocks(request: ScreenRequest):
                 query_args = [yf.EquityQuery('eq', ['sector', sector_name])]
                 if request.region != "all":
                     query_args.append(yf.EquityQuery('eq', ['region', request.region]))
+                else:
+                    query_args.append(yf.EquityQuery('or', [
+                        yf.EquityQuery('eq', ['region', 'us']),
+                        yf.EquityQuery('eq', ['region', 'hk'])
+                    ]))
                 
                 query = yf.EquityQuery('and', query_args) if len(query_args) > 1 else query_args[0]
                 res = yf.screener.screen(query)
