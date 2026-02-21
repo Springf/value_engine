@@ -21,12 +21,15 @@ interface ScreenResult {
 export default function ScreenerPage() {
     const [selectedEntities, setSelectedEntities] = useState<Entity[]>([]);
     const [region, setRegion] = useState<string>("all");
+    const [page, setPage] = useState<number>(1);
+    const [totalPages, setTotalPages] = useState<number>(1);
+    const [totalCount, setTotalCount] = useState<number>(0);
     const [results, setResults] = useState<ScreenResult[]>([]);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const router = useRouter();
 
-    const handleScreen = async () => {
+    const handleScreen = async (targetPage = 1) => {
         if (selectedEntities.length === 0) return;
 
         setLoading(true);
@@ -35,7 +38,7 @@ export default function ScreenerPage() {
             const res = await fetch("http://localhost:8000/api/data/screen", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ entities: selectedEntities, region })
+                body: JSON.stringify({ entities: selectedEntities, region, page: targetPage, limit: 50 })
             });
 
             if (!res.ok) throw new Error("Failed to fetch screening data");
@@ -44,6 +47,16 @@ export default function ScreenerPage() {
             // Sort results alphabetically by ticker
             const sortedResults = data.results.sort((a: ScreenResult, b: ScreenResult) => a.ticker.localeCompare(b.ticker));
             setResults(sortedResults);
+
+            if (data.pagination) {
+                setPage(data.pagination.page);
+                setTotalPages(Math.ceil(data.pagination.total / data.pagination.limit) || 1);
+                setTotalCount(data.pagination.total);
+            } else {
+                setPage(1);
+                setTotalPages(1);
+                setTotalCount(sortedResults.length);
+            }
         } catch (err: any) {
             setError(err.message || "An unexpected error occurred");
         } finally {
@@ -93,7 +106,7 @@ export default function ScreenerPage() {
                     </div>
                 </div>
                 <button
-                    onClick={handleScreen}
+                    onClick={() => handleScreen(1)}
                     disabled={loading || selectedEntities.length === 0}
                     className="w-full md:w-auto flex items-center justify-center gap-2 bg-emerald-500 hover:bg-emerald-600 shadow-md shadow-emerald-500/20 disabled:bg-emerald-500/50 disabled:shadow-none text-white px-8 py-3 rounded-xl font-bold transition-all hover:-translate-y-0.5 mt-4 md:mt-0"
                 >
@@ -152,6 +165,30 @@ export default function ScreenerPage() {
                             </tbody>
                         </table>
                     </div>
+                    {/* Pagination Controls */}
+                    {totalPages > 1 && (
+                        <div className="bg-slate-50 border-t border-slate-200 p-4 flex items-center justify-between">
+                            <span className="text-sm text-slate-500 font-medium">
+                                Showing page {page} of {totalPages} ({totalCount} total results)
+                            </span>
+                            <div className="flex gap-2">
+                                <button
+                                    onClick={() => handleScreen(page - 1)}
+                                    disabled={page <= 1 || loading}
+                                    className="px-4 py-2 border border-slate-300 rounded-lg text-sm font-medium text-slate-700 bg-white hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                >
+                                    Previous
+                                </button>
+                                <button
+                                    onClick={() => handleScreen(page + 1)}
+                                    disabled={page >= totalPages || loading}
+                                    className="px-4 py-2 border border-slate-300 rounded-lg text-sm font-medium text-slate-700 bg-white hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                >
+                                    Next
+                                </button>
+                            </div>
+                        </div>
+                    )}
                 </div>
             )}
         </div>

@@ -19,6 +19,8 @@ class Entity(BaseModel):
 class ScreenRequest(BaseModel):
     entities: List[Entity]
     region: str = "us"
+    page: int = 1
+    limit: int = 50
 
 @router.post("/screen")
 def screen_stocks(request: ScreenRequest):
@@ -70,9 +72,15 @@ def screen_stocks(request: ScreenRequest):
                 for t in presets[entity.id]:
                     raw_tickers.add(t)
 
-    results = []
     # 2. Process all flattened tickers
-    for ticker_symbol in list(raw_tickers):
+    sorted_tickers = sorted(list(raw_tickers))
+    total_count = len(sorted_tickers)
+    
+    offset = (request.page - 1) * request.limit
+    page_tickers = sorted_tickers[offset : offset + request.limit]
+    
+    results = []
+    for ticker_symbol in page_tickers:
         try:
             # We can reuse the single stock logic or simplify it
             # To avoid SEC rate limits during screening, we'll rely on Yahoo Finance for the screener
@@ -125,7 +133,14 @@ def screen_stocks(request: ScreenRequest):
             print(f"Error screening {ticker_symbol}: {e}")
             continue
             
-    return {"results": results}
+    return {
+        "results": results,
+        "pagination": {
+            "page": request.page,
+            "limit": request.limit,
+            "total": total_count
+        }
+    }
 
 @router.get("/stock/{ticker}")
 def get_stock_data(ticker: str):
