@@ -19,11 +19,7 @@ interface ScreenResult {
 }
 
 export default function ScreenerPage() {
-    const [selectedEntities, setSelectedEntities] = useState<Entity[]>([
-        { id: "AAPL", type: "ticker", label: "Apple Inc." },
-        { id: "MSFT", type: "ticker", label: "Microsoft Corporation" },
-        { id: "GOOGL", type: "ticker", label: "Alphabet Inc." }
-    ]);
+    const [selectedEntities, setSelectedEntities] = useState<Entity[]>([]);
     const [region, setRegion] = useState<string>("all");
     const [results, setResults] = useState<ScreenResult[]>([]);
     const [loading, setLoading] = useState(false);

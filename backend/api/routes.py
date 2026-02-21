@@ -223,9 +223,9 @@ def search_entities(q: str = "", region: str = "all"):
     
     for key, label in presets.items():
         if query in key.lower() or query in label.lower():
-            if region == "us" and key == "hk_tech":
+            if region == "us" and key in ["hk_tech", "hk_finance"]:
                 continue
-            if region == "hk" and key in ["dow30", "nasdaq100"]:
+            if region == "hk" and key in ["dow30", "nasdaq10"]:
                 continue
             results.append({"id": key, "type": "index", "label": label})
             
