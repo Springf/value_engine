@@ -9,7 +9,7 @@ Full-stack app with a Python backend and a Next.js frontend.
 - **Backend:** FastAPI + Uvicorn, served on `http://localhost:8000`
 - **Frontend:** Next.js 16 (App Router) + TypeScript + Tailwind CSS v4, served on `http://localhost:3000`
 - **Data:** Yahoo Finance via `yfinance`, SEC EDGAR public API (`data.sec.gov`)
-- **No database** — portfolio is stored in browser `localStorage`
+- **Portfolio Data:** Stored dynamically via backend in a local file at `portfolio/data.json`
 
 ## Dev Commands
 
@@ -25,20 +25,21 @@ npm run dev
 
 | File | Purpose |
 |---|---|
-| `backend/api/routes.py` | All API endpoints (`/screen`, `/stock/{ticker}`, `/search`) |
+| `backend/api/routes.py` | All API endpoints (`/screen`, `/stock/{ticker}`, `/search`, `/portfolio`) |
 | `backend/api/yahoo_client.py` | Fetches price, P/E, P/B, PEG, FCF from Yahoo Finance |
 | `backend/api/sec_client.py` | Resolves ticker → CIK, fetches XBRL company facts from SEC EDGAR |
 | `backend/models/calculators.py` | DCF and Graham Number formulas |
 | `backend/models/piotroski.py` | Piotroski F-Score (9-point scoring) |
-| `frontend/src/app/screener/page.tsx` | Sector/ticker screener with server-side pagination |
-| `frontend/src/app/analysis/[ticker]/page.tsx` | Deep-dive analysis for a single stock |
-| `frontend/src/app/portfolio/page.tsx` | Portfolio tracker — loads tickers from `localStorage` |
+| `frontend/src/app/screener/page.tsx` | Sector/ticker screener with server-side pagination and `sessionStorage` state |
+| `frontend/src/app/analysis/[ticker]/page.tsx` | Deep-dive analysis and portfolio note interactions |
+| `frontend/src/app/portfolio/page.tsx` | Portfolio tracker — loads history from `portfolio/data.json` and dynamically calculates DCF |
 
 ## API Overview
 
 - `POST /api/data/screen` — batch screen entities (`ticker`, `sector`, `index`) with pagination (`page`, `limit`)
 - `GET /api/data/stock/{ticker}` — full analysis for one ticker (Yahoo + SEC)
 - `GET /api/data/search?q=&region=` — autocomplete for tickers, sectors, indices
+- `GET/POST/DELETE /api/data/portfolio` — manages the local `portfolio/data.json` file storage
 
 ## Value Models
 

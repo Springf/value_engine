@@ -23,24 +23,26 @@ value_engine/
 │   ├── main.py                  # FastAPI app entry point, CORS config
 │   ├── requirements.txt
 │   ├── api/
-│   │   ├── routes.py            # All API route handlers
+│   │   ├── routes.py            # All API route handlers (including portfolio I/O)
 │   │   ├── yahoo_client.py      # Yahoo Finance data fetcher
 │   │   └── sec_client.py        # SEC EDGAR API client
 │   └── models/
 │       ├── calculators.py       # DCF & Graham Number calculators
 │       └── piotroski.py         # Piotroski F-Score calculator
+├── portfolio/
+│   └── data.json                # Local JSON persistence for portfolio history
 └── frontend/
     └── src/app/
         ├── layout.tsx           # Root layout with nav header
         ├── page.tsx             # Dashboard / landing page
         ├── screener/
-        │   ├── page.tsx         # Stock screener page
+        │   ├── page.tsx         # Stock screener page (sessionStorage history)
         │   └── autocomplete.tsx # Search autocomplete component
         ├── analysis/
         │   ├── page.tsx         # Analysis search landing
-        │   └── [ticker]/page.tsx # Deep-dive analysis for a ticker
+        │   └── [ticker]/page.tsx # Analysis + portfolio note tracking
         └── portfolio/
-            └── page.tsx         # Portfolio tracker (localStorage)
+            └── page.tsx         # Portfolio dashboard (loads from backend API)
 ```
 
 ---
@@ -211,7 +213,9 @@ Implemented in `models/piotroski.py`. Scores 0–9 across three pillars:
 
 ## Key Design Decisions
 
-- **No database** — stateless backend; portfolio is stored in browser `localStorage`
-- **Pagination** — sector expansion fetches all tickers from Yahoo (batched at 250/call), then paginates the full sorted list server-side (50/page default)
+- **Local Storage File** — Stateless backend memory, but portfolio state (including deeply nested historical logs) is permanently saved to a local `portfolio/data.json` file managed by the backend.
+- **Frontend DCF** — Frontend components recalculate custom DCF metrics dynamically using a user's latest saved `dcf_growth`, `dcf_discount` constraints against live free cash flow streams.
+- **Pagination** — Sector expansion fetches all tickers from Yahoo (batched at 250/call), then paginates the full sorted list server-side (50/page default).
+- **Session State** — The Screener view tracks your inputs in `sessionStorage` so you don't lose search results when navigating to analysis pages.
 - **Region filtering** — applied at both search and screener level to keep US and HK stocks separated or combined as needed
 - **HK stock support** — detected by `.HK` ticker suffix; SEC data is skipped for HK stocks

@@ -23,6 +23,9 @@ export default function AnalysisTickerPage() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [copied, setCopied] = useState(false);
+    const [isInPortfolio, setIsInPortfolio] = useState(false);
+    const [portfolioHistory, setPortfolioHistory] = useState<any[]>([]);
+    const [notes, setNotes] = useState("");
 
     // DCF Assumptions State
     const [growthRate, setGrowthRate] = useState<number>(5);
@@ -46,7 +49,32 @@ export default function AnalysisTickerPage() {
                 setLoading(false);
             }
         };
-        if (ticker) fetchData();
+
+        const fetchPortfolioStatus = async () => {
+            try {
+                const res = await fetch(`http://localhost:8000/api/data/portfolio/${ticker}`);
+                if (res.ok) {
+                    const json = await res.json();
+                    setIsInPortfolio(true);
+                    if (json.history && Array.isArray(json.history)) {
+                        setPortfolioHistory(json.history);
+                        if (json.history.length > 0) {
+                            const latest = json.history[json.history.length - 1];
+                            if (latest.dcf_growth !== undefined && latest.dcf_growth !== null) setGrowthRate(latest.dcf_growth);
+                            if (latest.dcf_discount !== undefined && latest.dcf_discount !== null) setDiscountRate(latest.dcf_discount);
+                            if (latest.dcf_multiple !== undefined && latest.dcf_multiple !== null) setTerminalMultiple(latest.dcf_multiple);
+                        }
+                    }
+                }
+            } catch (err) {
+                // Not in portfolio, ignore 404
+            }
+        };
+
+        if (ticker) {
+            fetchData();
+            fetchPortfolioStatus();
+        }
     }, [ticker]);
 
     // Recalculate DCF whenever inputs or data changes
@@ -78,14 +106,44 @@ export default function AnalysisTickerPage() {
 
     }, [data, growthRate, discountRate, terminalMultiple]);
 
-    const saveToPortfolio = () => {
-        const saved = JSON.parse(localStorage.getItem("portfolio") || "[]");
-        if (!saved.includes(ticker)) {
-            saved.push(ticker);
-            localStorage.setItem("portfolio", JSON.stringify(saved));
-            alert(`${ticker} added to portfolio!`);
-        } else {
-            alert(`${ticker} is already in your portfolio.`);
+    const saveToPortfolio = async () => {
+        if (!data || !data.market_data) return;
+
+        try {
+            const historyEntry = {
+                timestamp: new Date().toISOString(),
+                notes: notes || null,
+                dcf_growth: growthRate,
+                dcf_discount: discountRate,
+                dcf_multiple: terminalMultiple,
+                dcf_value: dcfValue
+            };
+
+            const payload = {
+                ticker: ticker,
+                priceAdded: portfolioHistory.length === 0 ? data.market_data.current_price : undefined,
+                dateAdded: portfolioHistory.length === 0 ? new Date().toISOString() : undefined,
+                history: [historyEntry]
+            };
+
+            const res = await fetch("http://localhost:8000/api/data/portfolio", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(payload)
+            });
+
+            if (res.ok) {
+                alert(isInPortfolio ? `${ticker} portfolio history updated!` : `${ticker} added to portfolio!`);
+                setIsInPortfolio(true);
+                // Refresh local history view seamlessly
+                setPortfolioHistory(prev => [...prev, historyEntry]);
+                setNotes(""); // Clear notes after save
+            } else {
+                alert(`Failed to save ${ticker} to portfolio.`);
+            }
+        } catch (err) {
+            console.error(err);
+            alert(`Error saving ${ticker} to portfolio.`);
         }
     };
 
@@ -162,15 +220,15 @@ What are the key risks to my DCF assumptions, and what qualitative factors shoul
                 </div>
                 <button
                     onClick={saveToPortfolio}
-                    className="flex items-center justify-center gap-2 bg-white border border-slate-200 shadow-sm hover:shadow-md hover:border-slate-300 text-slate-700 transition-all px-5 py-2.5 rounded-xl text-sm font-semibold hover:-translate-y-0.5"
+                    className="flex items-center justify-center gap-2 bg-slate-900 border border-slate-900 shadow-sm hover:shadow-md hover:bg-slate-800 text-white transition-all px-5 py-2.5 rounded-xl text-sm font-semibold hover:-translate-y-0.5"
                 >
-                    <PlusCircle className="w-4 h-4 text-emerald-500" /> Add to Portfolio
+                    <PlusCircle className="w-4 h-4 text-emerald-400" /> {isInPortfolio ? "Update Portfolio" : "Add to Portfolio"}
                 </button>
             </div>
 
             {/* Section 1: Stock Info */}
             <div className="flex flex-col gap-4">
-                <h2 className="text-2xl font-bold text-slate-800">1. Stock Info</h2>
+                <h2 className="text-2xl font-bold text-slate-800">Stock Info</h2>
                 <div className="flex flex-wrap gap-3">
                     <a
                         href={`https://finance.yahoo.com/quote/${data.ticker}`}
@@ -226,7 +284,7 @@ What are the key risks to my DCF assumptions, and what qualitative factors shoul
 
             {/* Section 2: Valuation Metrics */}
             <div className="flex flex-col gap-4 mt-4">
-                <h2 className="text-2xl font-bold text-slate-800">2. Valuation Metrics</h2>
+                <h2 className="text-2xl font-bold text-slate-800">Valuation Metrics</h2>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div className={`p-8 rounded-3xl border relative overflow-hidden transition-transform duration-300 hover:-translate-y-1 shadow-sm hover:shadow-md ${isUndervalued ? 'bg-emerald-50/50 border-emerald-200' : 'bg-red-50/50 border-red-200'}`}>
                         <ShieldAlert className={`absolute -right-4 -bottom-4 w-32 h-32 opacity-10 ${isUndervalued ? 'text-emerald-500' : 'text-red-500'}`} />
@@ -285,10 +343,55 @@ What are the key risks to my DCF assumptions, and what qualitative factors shoul
 
             </div>
 
-            {/* Section 3: AI Investment Advice */}
+            {/* Section 3: Investment Notes */}
+            <div className="flex flex-col gap-4 mt-4">
+                <h2 className="text-2xl font-bold text-slate-800">Investment Notes</h2>
+                <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm">
+                    <p className="text-sm text-slate-500 mb-3">Record any qualitative thoughts or thesis points before saving to your portfolio.</p>
+                    <textarea
+                        value={notes}
+                        onChange={(e) => setNotes(e.target.value)}
+                        placeholder="e.g. They just announced a massive buyback, and margins are expanding rapidly..."
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl p-4 text-sm text-slate-700 min-h-[120px] focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-white transition-colors"
+                    />
+                </div>
+            </div>
+
+            {/* Section 4: History Logs */}
+            {portfolioHistory.length > 0 && (
+                <div className="flex flex-col gap-4 mt-4">
+                    <h2 className="text-2xl font-bold text-slate-800">Portfolio History</h2>
+                    <div className="flex flex-col gap-4">
+                        {[...portfolioHistory].reverse().map((log, idx) => (
+                            <div key={idx} className="bg-white border border-emerald-100 rounded-2xl p-5 shadow-sm">
+                                <div className="flex items-center justify-between mb-3">
+                                    <span className="text-xs font-bold uppercase tracking-wider text-emerald-600 bg-emerald-50 px-3 py-1 rounded-full">
+                                        Log #{portfolioHistory.length - idx} &bull; {new Date(log.timestamp).toLocaleDateString()}
+                                    </span>
+                                    <span className="text-sm font-bold text-slate-800">
+                                        DCF: {formatCurrency(log.dcf_value)}
+                                    </span>
+                                </div>
+                                {log.notes && (
+                                    <div className="text-sm text-slate-600 bg-slate-50 p-4 rounded-xl border border-slate-100 mb-3 whitespace-pre-wrap">
+                                        {log.notes}
+                                    </div>
+                                )}
+                                <div className="flex items-center gap-6 text-xs text-slate-500 font-medium border-t border-slate-100 pt-3">
+                                    <span>Growth: <strong className="text-slate-700">{log.dcf_growth}%</strong></span>
+                                    <span>Discount: <strong className="text-slate-700">{log.dcf_discount}%</strong></span>
+                                    <span>Terminal: <strong className="text-slate-700">{log.dcf_multiple}x</strong></span>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+
+            {/* Section 5: AI Investment Advice */}
             <div className="flex flex-col gap-4 mt-4">
                 <div className="flex items-center justify-between">
-                    <h2 className="text-2xl font-bold text-slate-800">3. AI Investment Advice</h2>
+                    <h2 className="text-2xl font-bold text-slate-800">AI Investment Advice</h2>
                     <button
                         onClick={handleCopy}
                         className="flex items-center gap-2 px-4 py-2 bg-slate-900 text-white hover:bg-slate-800 transition-colors rounded-lg text-sm font-semibold shadow-sm"

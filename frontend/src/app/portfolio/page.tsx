@@ -7,29 +7,65 @@ import Link from "next/link";
 interface PortfolioResult {
     ticker: string;
     price: number | null;
+    fcf?: number | null;
+    shares_outstanding?: number | null;
     margin_of_safety: number | null;
     error?: string;
 }
 
+const calculateDCF = (fcf: number | null, shares: number | null, growthRate: number, discountRate: number, terminalMultiple: number) => {
+    if (!fcf || fcf <= 0 || !shares || shares <= 0) return null;
+
+    const g = growthRate / 100;
+    const d = discountRate / 100;
+    const tm = terminalMultiple;
+
+    let pv_fcf = 0;
+    for (let i = 1; i <= 5; i++) {
+        pv_fcf += (fcf * Math.pow(1 + g, i)) / Math.pow(1 + d, i);
+    }
+
+    const terminal_value = (fcf * Math.pow(1 + g, 5)) * tm;
+    const pv_terminal_value = terminal_value / Math.pow(1 + d, 5);
+
+    return (pv_fcf + pv_terminal_value) / shares;
+};
+
 export default function PortfolioPage() {
-    const [tickers, setTickers] = useState<string[]>([]);
+    const [portfolioItems, setPortfolioItems] = useState<any[]>([]);
     const [data, setData] = useState<Record<string, PortfolioResult>>({});
     const [loading, setLoading] = useState(false);
 
+    const fetchPortfolio = async () => {
+        try {
+            const res = await fetch("http://localhost:8000/api/data/portfolio");
+            if (res.ok) {
+                const json = await res.json();
+                setPortfolioItems(json);
+                return json.map((item: any) => item.ticker);
+            }
+        } catch (err) {
+            console.error("Failed to fetch portfolio from API", err);
+        }
+        return [];
+    };
+
     useEffect(() => {
-        // Load saved tickers from local storage
-        const saved = JSON.parse(localStorage.getItem("portfolio") || "[]");
-        setTickers(saved);
+        const init = async () => {
+            const tickers = await fetchPortfolio();
+            refreshData(tickers);
+        };
+        init();
     }, []);
 
-    const refreshData = async () => {
-        if (tickers.length === 0) return;
+    const refreshData = async (currentTickers: string[]) => {
+        if (currentTickers.length === 0) return;
         setLoading(true);
         try {
             const res = await fetch("http://localhost:8000/api/data/screen", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ tickers })
+                body: JSON.stringify({ entities: currentTickers.map(t => ({ id: t, type: "ticker" })) })
             });
             if (res.ok) {
                 const json = await res.json();
@@ -46,14 +82,26 @@ export default function PortfolioPage() {
         }
     };
 
-    useEffect(() => {
-        refreshData();
-    }, [tickers]);
+    const handleRefreshClick = () => {
+        refreshData(portfolioItems.map(item => item.ticker));
+    };
 
-    const removeTicker = (ticker: string) => {
-        const updated = tickers.filter((t) => t !== ticker);
-        setTickers(updated);
-        localStorage.setItem("portfolio", JSON.stringify(updated));
+    const removeTicker = async (ticker: string) => {
+        try {
+            await fetch(`http://localhost:8000/api/data/portfolio/${ticker}`, {
+                method: "DELETE"
+            });
+            const updated = portfolioItems.filter((item) => item.ticker !== ticker);
+            setPortfolioItems(updated);
+
+            // Remove from local state data map
+            const newData = { ...data };
+            delete newData[ticker];
+            setData(newData);
+        } catch (err) {
+            console.error("Failed to delete portfolio item", err);
+            alert("Failed to remove ticker from portfolio.");
+        }
     };
 
     return (
@@ -64,7 +112,7 @@ export default function PortfolioPage() {
                     <p className="text-slate-500">Track the value and margin of safety of your saved stocks.</p>
                 </div>
                 <button
-                    onClick={refreshData}
+                    onClick={handleRefreshClick}
                     disabled={loading}
                     className="flex items-center gap-2 bg-white border border-slate-200 shadow-sm hover:shadow-md hover:border-slate-300 transition-all px-5 py-2.5 rounded-xl text-sm font-semibold text-slate-700"
                 >
@@ -72,7 +120,7 @@ export default function PortfolioPage() {
                 </button>
             </div>
 
-            {tickers.length === 0 ? (
+            {portfolioItems.length === 0 ? (
                 <div className="text-center py-24 bg-white shadow-sm border border-slate-200 rounded-3xl flex flex-col items-center gap-5">
                     <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center text-slate-400">
                         <TrendingUp className="w-8 h-8" />
@@ -87,10 +135,31 @@ export default function PortfolioPage() {
                 </div>
             ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {tickers.map((ticker) => {
+                    {portfolioItems.map((portfolioItem) => {
+                        const ticker = portfolioItem.ticker;
                         const row = data[ticker];
-                        const mos = row?.margin_of_safety;
-                        const isUndervalued = mos !== null && mos !== undefined && mos > 0;
+                        const history = portfolioItem.history || [];
+                        const latestLog = history.length > 0 ? history[history.length - 1] : null;
+
+                        // Dynamic DCF Calculation
+                        const growthRate = latestLog?.dcf_growth ?? 5;
+                        const discountRate = latestLog?.dcf_discount ?? 10;
+                        const terminalMultiple = latestLog?.dcf_multiple ?? 10;
+
+                        const dynamicDcf = calculateDCF(row?.fcf || null, row?.shares_outstanding || null, growthRate, discountRate, terminalMultiple);
+
+                        const curPrice = row?.price;
+                        let dynamicMos = null;
+                        if (dynamicDcf !== null && curPrice) {
+                            dynamicMos = ((dynamicDcf - curPrice) / dynamicDcf) * 100;
+                        }
+
+                        const isUndervalued = dynamicMos !== null && dynamicMos !== undefined && dynamicMos > 0;
+
+                        let priceChangePct = null;
+                        if (row && row.price && portfolioItem.priceAdded) {
+                            priceChangePct = ((row.price - portfolioItem.priceAdded) / portfolioItem.priceAdded) * 100;
+                        }
 
                         return (
                             <div key={ticker} className="bg-white border border-slate-200 shadow-sm hover:shadow-md transition-shadow p-6 rounded-3xl flex flex-col gap-4 relative group">
@@ -106,19 +175,48 @@ export default function PortfolioPage() {
                                 {row ? (
                                     <div className="flex flex-col gap-4 mt-2">
                                         <div className="flex justify-between items-center text-sm border-b border-slate-50 pb-2">
+                                            <span className="text-slate-500 font-medium">Date Added</span>
+                                            <span className="font-semibold text-slate-700 text-sm">{portfolioItem.dateAdded ? new Date(portfolioItem.dateAdded).toLocaleDateString() : "N/A"}</span>
+                                        </div>
+                                        <div className="flex justify-between items-center text-sm border-b border-slate-50 pb-2">
+                                            <span className="text-slate-500 font-medium">Price When Added</span>
+                                            <span className="font-semibold text-slate-700 text-sm">${portfolioItem.priceAdded?.toFixed(2) || "N/A"}</span>
+                                        </div>
+                                        <div className="flex justify-between items-center text-sm border-b border-slate-50 pb-2">
                                             <span className="text-slate-500 font-medium">Current Price</span>
                                             <span className="font-bold text-slate-800 text-base">${row.price?.toFixed(2) || "N/A"}</span>
                                         </div>
+                                        {priceChangePct !== null && (
+                                            <div className="flex justify-between items-center text-sm border-b border-slate-50 pb-2">
+                                                <span className="text-slate-500 font-medium">Gain / Loss</span>
+                                                <span className={`font-bold text-sm ${priceChangePct > 0 ? 'text-emerald-500' : 'text-red-500'}`}>
+                                                    {priceChangePct > 0 ? '+' : ''}{priceChangePct.toFixed(2)}%
+                                                </span>
+                                            </div>
+                                        )}
+                                        <div className="flex justify-between items-center text-sm border-b border-slate-50 pb-2">
+                                            <span className="text-slate-500 font-medium">Latest DCF</span>
+                                            {dynamicDcf !== null ? (
+                                                <span className="font-bold text-purple-600 text-sm">${dynamicDcf.toFixed(2)}</span>
+                                            ) : (
+                                                <span className="text-slate-400 font-medium">N/A</span>
+                                            )}
+                                        </div>
                                         <div className="flex justify-between items-center text-sm border-b border-slate-50 pb-2">
                                             <span className="text-slate-500 font-medium">Margin of Safety</span>
-                                            {mos !== null && mos !== undefined ? (
+                                            {dynamicMos !== null && dynamicMos !== undefined ? (
                                                 <span className={`px-2.5 py-1 rounded-md text-xs font-bold ${isUndervalued ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
-                                                    {mos > 0 ? '+' : ''}{mos.toFixed(2)}%
+                                                    {dynamicMos > 0 ? '+' : ''}{dynamicMos.toFixed(2)}%
                                                 </span>
                                             ) : (
                                                 <span className="text-slate-400 font-medium">N/A</span>
                                             )}
                                         </div>
+                                        {latestLog && latestLog.notes && (
+                                            <div className="mt-2 text-xs text-slate-600 bg-slate-50/80 p-3 rounded-lg border border-slate-100 italic line-clamp-3">
+                                                "{latestLog.notes}"
+                                            </div>
+                                        )}
                                         <Link
                                             href={`/analysis/${ticker}`}
                                             className="mt-4 w-full text-center py-2.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 transition-colors rounded-xl text-sm font-semibold text-slate-700 hover:text-emerald-600"

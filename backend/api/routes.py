@@ -11,7 +11,40 @@ router = APIRouter(prefix="/api/data", tags=["data"])
 sec_client = SECClient()
 yahoo_client = YahooClient()
 
+import os
+import json
 import requests
+
+PORTFOLIO_FILE = "../portfolio/data.json"
+
+def _read_portfolio():
+    if not os.path.exists(PORTFOLIO_FILE):
+        return []
+    try:
+        with open(PORTFOLIO_FILE, "r") as f:
+            return json.load(f)
+    except Exception:
+        return []
+
+def _write_portfolio(data):
+    os.makedirs(os.path.dirname(PORTFOLIO_FILE), exist_ok=True)
+    with open(PORTFOLIO_FILE, "w") as f:
+        json.dump(data, f, indent=4)
+
+class HistoryLog(BaseModel):
+    timestamp: str
+    notes: str | None = None
+    dcf_growth: float | None = None
+    dcf_discount: float | None = None
+    dcf_multiple: float | None = None
+    dcf_value: float | None = None
+
+class PortfolioItem(BaseModel):
+    ticker: str
+    priceAdded: float | None = None
+    dateAdded: str | None = None
+    history: List[HistoryLog] = []
+
 
 class Entity(BaseModel):
     id: str  # e.g. 'AAPL' or 'technology'
@@ -118,17 +151,25 @@ def screen_stocks(request: ScreenRequest):
             yahoo_info = yahoo_client.get_stock_info(ticker_symbol)
             if not yahoo_info:
                 continue
+            
+            # Extract shares outstanding for frontend dynamic calculations
+            market_cap = yahoo_info.get("market_cap", 0)
+            current_price = yahoo_info.get("current_price", 0)
+            shares_outstanding = 0
+            if current_price and current_price > 0 and market_cap:
+                shares_outstanding = int(market_cap / current_price)
                 
             results.append({
                 "ticker": ticker_symbol.upper(),
                 "company_name": yahoo_info.get("short_name", "Unknown Company"),
-                "price": yahoo_info.get("current_price", 0),
+                "price": current_price,
                 "pe": yahoo_info.get("trailing_pe"),
                 "pb": yahoo_info.get("price_to_book"),
                 "peg": yahoo_info.get("peg_ratio"),
                 "fcf": yahoo_info.get("free_cashflow", 0),
-                "market_cap": yahoo_info.get("market_cap"),
-                "eps": yahoo_info.get("eps")
+                "market_cap": market_cap,
+                "eps": yahoo_info.get("eps"),
+                "shares_outstanding": shares_outstanding
             })
         except Exception as e:
             print(f"Error screening {ticker_symbol}: {e}")
@@ -289,3 +330,60 @@ def search_entities(q: str = "", region: str = "all"):
         print(f"Error searching Yahoo Finance for {query}: {e}")
         
     return {"results": results[:100] if len(results) > 100 else results} # Limit increased to 100
+
+@router.get("/portfolio")
+def get_portfolio():
+    """
+    Returns the list of saved portfolio items.
+    """
+    return _read_portfolio()
+
+@router.get("/portfolio/{ticker}")
+def get_portfolio_item(ticker: str):
+    """
+    Returns a specific portfolio item and its history, or 404 if not found.
+    """
+    portfolio = _read_portfolio()
+    for p in portfolio:
+        if p.get("ticker").upper() == ticker.upper():
+            return p
+    raise HTTPException(status_code=404, detail="Ticker not found in portfolio")
+
+@router.post("/portfolio")
+def add_to_portfolio(item: PortfolioItem):
+    """
+    Adds a new stock to the portfolio. If it already exists, appends to its history.
+    """
+    portfolio = _read_portfolio()
+    
+    # Check if already exists
+    exists = False
+    for p in portfolio:
+        if p.get("ticker").upper() == item.ticker.upper():
+            # Ensure history list exists
+            if "history" not in p or not isinstance(p["history"], list):
+                p["history"] = []
+                
+            # Append new history logs from the incoming item to the existing record
+            for h in item.history:
+                p["history"].append(h.model_dump())
+                
+            exists = True
+            break
+            
+    if not exists:
+        portfolio.append(item.model_dump())
+        
+    _write_portfolio(portfolio)
+    return {"message": "Success"}
+
+@router.delete("/portfolio/{ticker}")
+def remove_from_portfolio(ticker: str):
+    """
+    Removes a stock from the portfolio.
+    """
+    portfolio = _read_portfolio()
+    updated = [p for p in portfolio if p.get("ticker") != ticker]
+    _write_portfolio(updated)
+    return {"message": "Success"}
+

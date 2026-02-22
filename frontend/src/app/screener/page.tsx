@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { Loader2 } from "lucide-react";
+import { useState, useEffect } from "react";
+import { Loader2, RotateCcw } from "lucide-react";
 import { useRouter } from "next/navigation";
 import AutocompleteInput, { Entity } from "./autocomplete";
 
@@ -30,7 +30,53 @@ export default function ScreenerPage() {
     const [results, setResults] = useState<ScreenResult[]>([]);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [isHydrated, setIsHydrated] = useState(false);
     const router = useRouter();
+
+    useEffect(() => {
+        const savedSession = sessionStorage.getItem("screener_session");
+        if (savedSession) {
+            try {
+                const parsed = JSON.parse(savedSession);
+                if (parsed.selectedEntities) setSelectedEntities(parsed.selectedEntities);
+                if (parsed.region) setRegion(parsed.region);
+                if (parsed.condition) setCondition(parsed.condition);
+                if (parsed.page) setPage(parsed.page);
+                if (parsed.totalPages) setTotalPages(parsed.totalPages);
+                if (parsed.totalCount) setTotalCount(parsed.totalCount);
+                if (parsed.results) setResults(parsed.results);
+            } catch (e) {
+                console.error("Failed to parse saved session", e);
+            }
+        }
+        setIsHydrated(true);
+    }, []);
+
+    useEffect(() => {
+        if (!isHydrated) return;
+        const sessionData = {
+            selectedEntities,
+            region,
+            condition,
+            page,
+            totalPages,
+            totalCount,
+            results
+        };
+        sessionStorage.setItem("screener_session", JSON.stringify(sessionData));
+    }, [selectedEntities, region, condition, page, totalPages, totalCount, results, isHydrated]);
+
+    const handleReset = () => {
+        setSelectedEntities([]);
+        setRegion("all");
+        setCondition("or");
+        setPage(1);
+        setTotalPages(1);
+        setTotalCount(0);
+        setResults([]);
+        setError(null);
+        sessionStorage.removeItem("screener_session");
+    };
 
     const handleScreen = async (targetPage = 1) => {
         if (selectedEntities.length === 0) return;
@@ -120,13 +166,22 @@ export default function ScreenerPage() {
                         </select>
                     </div>
                 </div>
-                <button
-                    onClick={() => handleScreen(1)}
-                    disabled={loading || selectedEntities.length === 0}
-                    className="w-full md:w-auto flex items-center justify-center gap-2 bg-emerald-500 hover:bg-emerald-600 shadow-md shadow-emerald-500/20 disabled:bg-emerald-500/50 disabled:shadow-none text-white px-8 py-3 rounded-xl font-bold transition-all hover:-translate-y-0.5 mt-4 md:mt-0"
-                >
-                    {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : "Run Screen"}
-                </button>
+                <div className="flex gap-3 w-full md:w-auto mt-4 md:mt-0">
+                    <button
+                        onClick={handleReset}
+                        disabled={loading || (selectedEntities.length === 0 && results.length === 0 && region === "all" && condition === "or")}
+                        className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-white border border-slate-200 hover:bg-slate-50 hover:border-slate-300 text-slate-700 disabled:opacity-50 disabled:cursor-not-allowed px-5 py-3 rounded-xl font-bold transition-all"
+                    >
+                        <RotateCcw className="w-4 h-4" /> Reset
+                    </button>
+                    <button
+                        onClick={() => handleScreen(1)}
+                        disabled={loading || selectedEntities.length === 0}
+                        className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-emerald-500 hover:bg-emerald-600 shadow-md shadow-emerald-500/20 disabled:bg-emerald-500/50 disabled:shadow-none text-white px-8 py-3 rounded-xl font-bold transition-all hover:-translate-y-0.5"
+                    >
+                        {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : "Run Screen"}
+                    </button>
+                </div>
             </div>
 
             {error && (

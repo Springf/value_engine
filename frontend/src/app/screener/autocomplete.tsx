@@ -20,6 +20,7 @@ export default function AutocompleteInput({ selectedEntities, onChange, region }
     const [suggestions, setSuggestions] = useState<Entity[]>([]);
     const [loading, setLoading] = useState(false);
     const [isOpen, setIsOpen] = useState(false);
+    const [activeIndex, setActiveIndex] = useState(-1);
     const wrapperRef = useRef<HTMLDivElement>(null);
     const debounceTimeout = useRef<NodeJS.Timeout | null>(null);
 
@@ -47,6 +48,11 @@ export default function AutocompleteInput({ selectedEntities, onChange, region }
                 const data = await res.json();
                 setSuggestions(data.results || []);
                 setIsOpen(true);
+                if (data.results && data.results.length > 0) {
+                    setActiveIndex(0);
+                } else {
+                    setActiveIndex(-1);
+                }
             }
         } catch (error) {
             console.error("Error fetching suggestions:", error);
@@ -59,6 +65,7 @@ export default function AutocompleteInput({ selectedEntities, onChange, region }
         const value = e.target.value;
         setQuery(value);
         setIsOpen(true);
+        setActiveIndex(-1);
 
         if (debounceTimeout.current) clearTimeout(debounceTimeout.current);
         debounceTimeout.current = setTimeout(() => {
@@ -73,10 +80,31 @@ export default function AutocompleteInput({ selectedEntities, onChange, region }
         setQuery("");
         setSuggestions([]);
         setIsOpen(false);
+        setActiveIndex(-1);
     };
 
     const handleRemove = (idToRemove: string) => {
         onChange(selectedEntities.filter((e) => e.id !== idToRemove));
+    };
+
+    const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+        if (!isOpen || suggestions.length === 0) return;
+
+        if (e.key === "ArrowDown") {
+            e.preventDefault();
+            setActiveIndex((prev) => (prev < suggestions.length - 1 ? prev + 1 : prev));
+        } else if (e.key === "ArrowUp") {
+            e.preventDefault();
+            setActiveIndex((prev) => (prev > 0 ? prev - 1 : 0));
+        } else if (e.key === "Tab" || e.key === "Enter") {
+            if (activeIndex >= 0 && activeIndex < suggestions.length) {
+                e.preventDefault(); // Prevent navigating away
+                handleSelect(suggestions[activeIndex]);
+            }
+        } else if (e.key === "Escape") {
+            setIsOpen(false);
+            setActiveIndex(-1);
+        }
     };
 
     const getEntityIcon = (type: string) => {
@@ -128,6 +156,7 @@ export default function AutocompleteInput({ selectedEntities, onChange, region }
                         type="text"
                         value={query}
                         onChange={handleInputChange}
+                        onKeyDown={handleKeyDown}
                         onFocus={() => { if (query.length >= 2) setIsOpen(true); }}
                         className={`w-full bg-transparent border-none focus:outline-none focus:ring-0 text-slate-900 placeholder-slate-400 py-1 ${!query && selectedEntities.length === 0 ? 'pl-8' : 'pl-2'}`}
                         placeholder={selectedEntities.length === 0 ? "Search by ticker, sector, or index..." : "Add more..."}
@@ -143,11 +172,11 @@ export default function AutocompleteInput({ selectedEntities, onChange, region }
             {/* Dropdown Suggestions */}
             {isOpen && query.length >= 2 && suggestions.length > 0 && (
                 <div className="absolute z-50 w-full mt-2 bg-white border border-slate-200 shadow-xl rounded-xl overflow-hidden max-h-64 overflow-y-auto">
-                    {suggestions.map((suggestion) => (
+                    {suggestions.map((suggestion, index) => (
                         <button
                             key={suggestion.id}
                             onClick={() => handleSelect(suggestion)}
-                            className="w-full text-left px-4 py-3 hover:bg-slate-50 flex flex-col transition-colors border-b border-slate-100 last:border-0"
+                            className={`w-full text-left px-4 py-3 flex flex-col transition-colors border-b border-slate-100 last:border-0 ${activeIndex === index ? 'bg-slate-100' : 'hover:bg-slate-50'}`}
                         >
                             <span className="font-semibold text-slate-800 break-words">{suggestion.id}</span>
                             <span className="text-xs text-slate-500 line-clamp-1">{suggestion.label}</span>
