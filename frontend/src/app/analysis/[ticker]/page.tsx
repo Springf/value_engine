@@ -183,8 +183,10 @@ Here is the current fundamental data:
 - Current Price: ${formatCurrency(data.market_data.current_price)}
 - Market Cap: ${data.market_data.market_cap ? `$${(data.market_data.market_cap / 1e9).toFixed(2)}B` : "N/A"}
 - P/E Ratio: ${data.market_data.trailing_pe?.toFixed(2) || "N/A"}
-- P/B Ratio: ${data.market_data.price_to_book?.toFixed(2) || "N/A"}
 - PEG Ratio: ${data.market_data.peg_ratio?.toFixed(2) || "N/A"}
+- ROE: ${data.market_data.return_on_equity !== undefined && data.market_data.return_on_equity !== null ? `${(data.market_data.return_on_equity * 100).toFixed(1)}%` : "N/A"}
+- Operating Margin: ${data.market_data.operating_margin !== undefined && data.market_data.operating_margin !== null ? `${(data.market_data.operating_margin * 100).toFixed(1)}%` : "N/A"}
+- Revenue Growth: ${data.market_data.revenue_growth !== undefined && data.market_data.revenue_growth !== null ? `${(data.market_data.revenue_growth * 100).toFixed(1)}%` : "N/A"}
 - Free Cash Flow: ${data.market_data.free_cashflow ? `$${(data.market_data.free_cashflow / 1e9).toFixed(2)}B` : "N/A"}
 - EPS: ${formatCurrency(data.market_data.eps)}
 - Debt/Eq Ratio: ${data.market_data.debt_to_equity !== undefined && data.market_data.debt_to_equity !== null ? data.market_data.debt_to_equity.toFixed(2) : "N/A"}
@@ -216,6 +218,9 @@ What are the key risks to my DCF assumptions, and what qualitative factors shoul
                     <div className="flex items-center gap-3 mt-2 text-slate-500">
                         <span className="text-2xl font-semibold text-slate-900">{formatCurrency(data.market_data.current_price)}</span>
                         <span>Market Cap: {data.market_data.market_cap ? `$${(data.market_data.market_cap / 1e9).toFixed(2)}B` : "N/A"}</span>
+                        {data.market_data.last_market_update && (
+                            <span className="text-xs text-slate-400">{data.market_data.last_market_update}</span>
+                        )}
                     </div>
                 </div>
                 <button
@@ -229,6 +234,9 @@ What are the key risks to my DCF assumptions, and what qualitative factors shoul
             {/* Section 1: Stock Info */}
             <div className="flex flex-col gap-4">
                 <h2 className="text-2xl font-bold text-slate-800">Stock Info</h2>
+                {data.market_data.most_recent_quarter && (
+                    <p className="text-xs text-slate-400 -mt-3">Fundamentals as of {data.market_data.most_recent_quarter}</p>
+                )}
                 <div className="flex flex-wrap gap-3">
                     <a
                         href={`https://finance.yahoo.com/quote/${data.ticker}`}
@@ -263,8 +271,10 @@ What are the key risks to my DCF assumptions, and what qualitative factors shoul
                 <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4 mt-2">
                     {[
                         { label: "P/E Ratio", value: data.market_data.trailing_pe?.toFixed(2), icon: TrendingUp },
-                        { label: "P/B Ratio", value: data.market_data.price_to_book?.toFixed(2), icon: BarChart3 },
                         { label: "PEG Ratio", value: data.market_data.peg_ratio?.toFixed(2), icon: TrendingUp },
+                        { label: "ROE", value: data.market_data.return_on_equity !== undefined && data.market_data.return_on_equity !== null ? `${(data.market_data.return_on_equity * 100).toFixed(1)}%` : "N/A", icon: BarChart3 },
+                        { label: "Op. Margin", value: data.market_data.operating_margin !== undefined && data.market_data.operating_margin !== null ? `${(data.market_data.operating_margin * 100).toFixed(1)}%` : "N/A", icon: BarChart3 },
+                        { label: "Rev. Growth", value: data.market_data.revenue_growth !== undefined && data.market_data.revenue_growth !== null ? `${(data.market_data.revenue_growth * 100).toFixed(1)}%` : "N/A", icon: TrendingUp },
                         { label: "EPS", value: formatCurrency(data.market_data.eps), icon: DollarSign },
                         { label: "Free Cash Flow", value: data.market_data.free_cashflow ? `$${(data.market_data.free_cashflow / 1e9).toFixed(2)}B` : null, icon: DollarSign },
                         { label: "Debt/Eq Ratio", value: data.market_data.debt_to_equity !== undefined && data.market_data.debt_to_equity !== null ? data.market_data.debt_to_equity.toFixed(2) : "N/A", icon: BarChart3 },
@@ -276,7 +286,7 @@ What are the key risks to my DCF assumptions, and what qualitative factors shoul
                                 <stat.icon className="w-4 h-4 text-emerald-500" />
                                 <span className="text-xs uppercase tracking-wider font-bold">{stat.label}</span>
                             </div>
-                            <span className="text-xl font-bold text-slate-800 truncate" title={stat.value?.toString() || "N/A"}>{stat.value || "N/A"}</span>
+                            <span className={"text-xl font-bold truncate " + (stat.label === "Rev. Growth" && data.market_data.revenue_growth && data.market_data.revenue_growth > 0 ? "text-emerald-600" : stat.label === "Rev. Growth" && data.market_data.revenue_growth && data.market_data.revenue_growth < 0 ? "text-red-600" : "text-slate-800")} title={stat.value?.toString() || "N/A"}>{stat.value || "N/A"}</span>
                         </div>
                     ))}
                 </div>
@@ -366,7 +376,7 @@ What are the key risks to my DCF assumptions, and what qualitative factors shoul
                             <div key={idx} className="bg-white border border-emerald-100 rounded-2xl p-5 shadow-sm">
                                 <div className="flex items-center justify-between mb-3">
                                     <span className="text-xs font-bold uppercase tracking-wider text-emerald-600 bg-emerald-50 px-3 py-1 rounded-full">
-                                        Log #{portfolioHistory.length - idx} &bull; {new Date(log.timestamp).toLocaleDateString()}
+                                        Log #{portfolioHistory.length - idx} &bull; {new Date(log.timestamp).toLocaleString()}
                                     </span>
                                     <span className="text-sm font-bold text-slate-800">
                                         DCF: {formatCurrency(log.dcf_value)}

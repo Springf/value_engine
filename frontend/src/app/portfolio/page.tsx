@@ -10,7 +10,13 @@ interface PortfolioResult {
     fcf?: number | null;
     shares_outstanding?: number | null;
     margin_of_safety: number | null;
+    most_recent_quarter?: string | null;
     error?: string;
+    pe?: number | null;
+    peg?: number | null;
+    return_on_equity?: number | null;
+    operating_margin?: number | null;
+    revenue_growth?: number | null;
 }
 
 const calculateDCF = (fcf: number | null, shares: number | null, growthRate: number, discountRate: number, terminalMultiple: number) => {
@@ -31,10 +37,14 @@ const calculateDCF = (fcf: number | null, shares: number | null, growthRate: num
     return (pv_fcf + pv_terminal_value) / shares;
 };
 
+const safeFormatPct = (val: number | null | undefined) =>
+    val !== null && val !== undefined ? `${(val * 100).toFixed(1)}%` : "N/A";
+
 export default function PortfolioPage() {
     const [portfolioItems, setPortfolioItems] = useState<any[]>([]);
     const [data, setData] = useState<Record<string, PortfolioResult>>({});
     const [loading, setLoading] = useState(false);
+    const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
     const fetchPortfolio = async () => {
         try {
@@ -65,7 +75,11 @@ export default function PortfolioPage() {
             const res = await fetch("http://localhost:8000/api/data/screen", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ entities: currentTickers.map(t => ({ id: t, type: "ticker" })) })
+                body: JSON.stringify({
+                    entities: currentTickers.map(t => ({ id: t, type: "ticker" })),
+                    region: "all",
+                    limit: currentTickers.length
+                })
             });
             if (res.ok) {
                 const json = await res.json();
@@ -79,6 +93,7 @@ export default function PortfolioPage() {
             console.error(err);
         } finally {
             setLoading(false);
+            setLastUpdated(new Date());
         }
     };
 
@@ -110,6 +125,11 @@ export default function PortfolioPage() {
                 <div>
                     <h1 className="text-3xl font-bold tracking-tight text-slate-800">Your Portfolio</h1>
                     <p className="text-slate-500">Track the value and margin of safety of your saved stocks.</p>
+                    {lastUpdated && (
+                        <p className="text-xs text-slate-400 mt-1">
+                            Market data as of {lastUpdated.toLocaleString()}
+                        </p>
+                    )}
                 </div>
                 <button
                     onClick={handleRefreshClick}
@@ -174,6 +194,22 @@ export default function PortfolioPage() {
                                 </div>
                                 {row ? (
                                     <div className="flex flex-col gap-4 mt-2">
+                                        <div className="flex justify-between items-center px-4 py-3 bg-slate-50 border-t border-slate-100">
+                                            <div className="text-center flex-1">
+                                                <div className="text-[10px] uppercase tracking-wider text-slate-500 font-bold mb-0.5">ROE</div>
+                                                <div className="text-sm font-semibold text-slate-800">{safeFormatPct(row.return_on_equity)}</div>
+                                            </div>
+                                            <div className="w-px h-8 bg-slate-200"></div>
+                                            <div className="text-center flex-1">
+                                                <div className="text-[10px] uppercase tracking-wider text-slate-500 font-bold mb-0.5" title="Operating Margin">OP. MARGIN</div>
+                                                <div className="text-sm font-semibold text-slate-800">{safeFormatPct(row.operating_margin)}</div>
+                                            </div>
+                                            <div className="w-px h-8 bg-slate-200"></div>
+                                            <div className="text-center flex-1">
+                                                <div className="text-[10px] uppercase tracking-wider text-slate-500 font-bold mb-0.5" title="Revenue Growth">REV. GRW.</div>
+                                                <div className={`text-sm font-semibold ${row.revenue_growth && row.revenue_growth > 0 ? "text-emerald-600" : row.revenue_growth && row.revenue_growth < 0 ? "text-red-600" : "text-slate-800"}`}>{safeFormatPct(row.revenue_growth)}</div>
+                                            </div>
+                                        </div>
                                         <div className="flex justify-between items-center text-sm border-b border-slate-50 pb-2">
                                             <span className="text-slate-500 font-medium">Date Added</span>
                                             <span className="font-semibold text-slate-700 text-sm">{portfolioItem.dateAdded ? new Date(portfolioItem.dateAdded).toLocaleDateString() : "N/A"}</span>
@@ -196,11 +232,16 @@ export default function PortfolioPage() {
                                         )}
                                         <div className="flex justify-between items-center text-sm border-b border-slate-50 pb-2">
                                             <span className="text-slate-500 font-medium">Latest DCF</span>
-                                            {dynamicDcf !== null ? (
-                                                <span className="font-bold text-purple-600 text-sm">${dynamicDcf.toFixed(2)}</span>
-                                            ) : (
-                                                <span className="text-slate-400 font-medium">N/A</span>
-                                            )}
+                                            <div className="flex flex-col items-end gap-0.5">
+                                                {dynamicDcf !== null ? (
+                                                    <span className="font-bold text-purple-600 text-sm">${dynamicDcf.toFixed(2)}</span>
+                                                ) : (
+                                                    <span className="text-slate-400 font-medium">N/A</span>
+                                                )}
+                                                {row?.most_recent_quarter && (
+                                                    <span className="text-xs text-slate-400">FCF as of {row.most_recent_quarter}</span>
+                                                )}
+                                            </div>
                                         </div>
                                         <div className="flex justify-between items-center text-sm border-b border-slate-50 pb-2">
                                             <span className="text-slate-500 font-medium">Margin of Safety</span>

@@ -10,8 +10,10 @@ interface ScreenResult {
     company_name: string;
     price: number | null;
     pe: number | null;
-    pb: number | null;
     peg: number | null;
+    return_on_equity: number | null;
+    operating_margin: number | null;
+    revenue_growth: number | null;
     fcf: number | null;
     market_cap: number | null;
     eps: number | null;
@@ -19,6 +21,9 @@ interface ScreenResult {
     graham_number: number | null;
     margin_of_safety: number | null;
 }
+
+const safeFormatPct = (val: number | null | undefined) =>
+    val !== null && val !== undefined ? `${(val * 100).toFixed(1)}%` : "-";
 
 export default function ScreenerPage() {
     const [selectedEntities, setSelectedEntities] = useState<Entity[]>([]);
@@ -201,9 +206,11 @@ export default function ScreenerPage() {
                                     <th className="px-6 py-4 font-bold">Company Name</th>
                                     <th className="px-6 py-4 font-bold text-right">Price</th>
                                     <th className="px-6 py-4 font-bold text-right">Market Cap</th>
-                                    <th className="px-6 py-4 font-bold text-right">P/B</th>
                                     <th className="px-6 py-4 font-bold text-right">P/E</th>
                                     <th className="px-6 py-4 font-bold text-right">PEG</th>
+                                    <th className="px-6 py-4 font-bold text-right">ROE</th>
+                                    <th className="px-6 py-4 font-bold text-right">Op. Margin</th>
+                                    <th className="px-6 py-4 font-bold text-right">Rev. Grw</th>
                                     <th className="px-6 py-4 font-bold text-right">EPS</th>
                                     <th className="px-6 py-4 font-bold text-right">FCF</th>
                                 </tr>
@@ -219,9 +226,11 @@ export default function ScreenerPage() {
                                         <td className="px-6 py-4 font-medium text-slate-600 truncate max-w-[200px]" title={res.company_name}>{res.company_name}</td>
                                         <td className="px-6 py-4 text-right font-medium">{formatNumber(res.price, "$")}</td>
                                         <td className="px-6 py-4 text-right font-medium">{formatNumber(res.market_cap, "$")}</td>
-                                        <td className="px-6 py-4 text-right font-medium">{formatNumber(res.pb)}</td>
                                         <td className="px-6 py-4 text-right font-medium">{formatNumber(res.pe)}</td>
                                         <td className="px-6 py-4 text-right font-medium">{formatNumber(res.peg)}</td>
+                                        <td className="px-6 py-4 text-right font-medium">{safeFormatPct(res.return_on_equity)}</td>
+                                        <td className="px-6 py-4 text-right font-medium">{safeFormatPct(res.operating_margin)}</td>
+                                        <td className={`px-6 py-4 text-right font-medium ${res.revenue_growth && res.revenue_growth > 0 ? "text-emerald-600" : res.revenue_growth && res.revenue_growth < 0 ? "text-red-600" : ""}`}>{safeFormatPct(res.revenue_growth)}</td>
                                         <td className="px-6 py-4 text-right font-medium">{formatNumber(res.eps, "$")}</td>
                                         <td className="px-6 py-4 text-right font-medium">{formatNumber(res.fcf, "$")}</td>
                                     </tr>

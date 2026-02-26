@@ -26,7 +26,7 @@ npm run dev
 | File | Purpose |
 |---|---|
 | `backend/api/routes.py` | All API endpoints (`/screen`, `/stock/{ticker}`, `/search`, `/portfolio`) |
-| `backend/api/yahoo_client.py` | Fetches price, P/E, P/B, PEG, FCF from Yahoo Finance |
+| `backend/api/yahoo_client.py` | Fetches price, P/E, ROE, Op Margin, Rev Growth, PEG, FCF from Yahoo Finance |
 | `backend/api/sec_client.py` | Resolves ticker → CIK, fetches XBRL company facts from SEC EDGAR |
 | `backend/models/calculators.py` | DCF and Graham Number formulas |
 | `backend/models/piotroski.py` | Piotroski F-Score (9-point scoring) |

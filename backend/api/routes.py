@@ -158,18 +158,21 @@ def screen_stocks(request: ScreenRequest):
             shares_outstanding = 0
             if current_price and current_price > 0 and market_cap:
                 shares_outstanding = int(market_cap / current_price)
-                
+
             results.append({
                 "ticker": ticker_symbol.upper(),
                 "company_name": yahoo_info.get("short_name", "Unknown Company"),
                 "price": current_price,
                 "pe": yahoo_info.get("trailing_pe"),
-                "pb": yahoo_info.get("price_to_book"),
                 "peg": yahoo_info.get("peg_ratio"),
+                "return_on_equity": yahoo_info.get("return_on_equity"),
+                "operating_margin": yahoo_info.get("operating_margin"),
+                "revenue_growth": yahoo_info.get("revenue_growth"),
                 "fcf": yahoo_info.get("free_cashflow", 0),
                 "market_cap": market_cap,
                 "eps": yahoo_info.get("eps"),
-                "shares_outstanding": shares_outstanding
+                "shares_outstanding": shares_outstanding,
+                "most_recent_quarter": yahoo_info.get("most_recent_quarter"),
             })
         except Exception as e:
             print(f"Error screening {ticker_symbol}: {e}")
@@ -198,9 +201,11 @@ def get_stock_data(ticker: str):
     # Only attempt SEC EDGAR for US stocks (no suffix usually, or explicitly requested)
     is_us_stock = "." not in ticker
     sec_data = None
-    
+    sec_bv_data = None
+
     if is_us_stock:
         sec_data = sec_client.get_company_facts(ticker)
+        sec_bv_data = sec_client.get_book_value_data(ticker)
 
     # Calculate Value Metrics Using Available Data
     # 1. DCF Model Assuming standard 5% growth, 10% discount, 10x terminal multiple
@@ -221,18 +226,36 @@ def get_stock_data(ticker: str):
             terminal_multiple=10.0,
             shares_outstanding=shares_outstanding
         )
-        
+
     # 2. Graham Number
-    pb = yahoo_info.get("price_to_book")
+    # Note: For international stocks, raw EPS and Book Value are often in a different currency
+    # (e.g., CNY) than the trading price (e.g., HKD). To ensure the Graham Number is in the
+    # same currency as the stock price, we derive EPS and BVPS from P/E and P/B ratios, 
+    # which are implicitly currency-adjusted by the market.
     pe = yahoo_info.get("trailing_pe")
+    pb = yahoo_info.get("price_to_book") # Added this back below
+    
+    # We still prefer SEC BVPS for US stocks since it uses total shares
+    bvps = None
+    if sec_bv_data:
+        bvps = sec_bv_data.get("book_value_per_share")
+        yahoo_info["sec_book_value_per_share"] = round(bvps, 4) if bvps else None
+
     graham_number = None
     
-    if pb and pe and pb > 0 and pe > 0 and shares_outstanding > 0:
-        # P/E = Price / EPS => EPS = Price / P/E
-        # P/B = Price / BVPS => BVPS = Price / P/B
-        eps = current_price / pe
-        bvps = current_price / pb
-        graham_number = calculate_graham_number(eps=eps, book_value_per_share=bvps)
+    # Calculate Graham Number
+    # For international stocks, derive EPS and BVPS to avoid currency mismatch
+    is_us = "." not in ticker
+    if not is_us and pe and pb and pe > 0 and pb > 0 and current_price and current_price > 0:
+        derived_eps = current_price / pe
+        derived_bvps = current_price / pb
+        graham_number = calculate_graham_number(eps=derived_eps, book_value_per_share=derived_bvps)
+    # For US stocks, use SEC BVPS if available, otherwise fallback to Yahoo book value, and use raw EPS
+    else:
+        eps = yahoo_info.get("eps")
+        us_bvps = bvps if bvps is not None else yahoo_info.get("book_value")
+        if us_bvps and eps and us_bvps > 0 and eps > 0:
+            graham_number = calculate_graham_number(eps=eps, book_value_per_share=us_bvps)
         
     # Explicitly attach shares_outstanding back to market_data for frontend usage
     yahoo_info["shares_outstanding"] = shares_outstanding
@@ -247,6 +270,7 @@ def get_stock_data(ticker: str):
              "margin_of_safety_graham": round(((graham_number - current_price) / graham_number) * 100, 2) if graham_number and current_price else None
         },
         "has_sec_data": sec_data is not None
+
     }
 
 @router.get("/search")

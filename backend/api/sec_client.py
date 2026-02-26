@@ -42,7 +42,7 @@ class SECClient:
         cik = self.get_cik(ticker)
         if not cik:
             return None
-            
+
         url = f"{self.BASE_URL}/api/xbrl/companyfacts/CIK{cik}.json"
         try:
             response = requests.get(url, headers=self.headers)
@@ -51,3 +51,52 @@ class SECClient:
         except requests.exceptions.RequestException as e:
             print(f"Error fetching facts for CIK {cik}: {e}")
             return None
+
+    def _get_most_recent_value(self, facts: Dict[str, Any], concept: str) -> Optional[float]:
+        """
+        Extracts the most recent annual or quarterly value for a given US-GAAP concept
+        from SEC XBRL company facts.
+        """
+        try:
+            units = facts.get("facts", {}).get("us-gaap", {}).get(concept, {}).get("units", {})
+            # Equity is in USD, shares are in 'shares'
+            values = units.get("USD") or units.get("shares") or []
+
+            # Filter to 10-K (annual) or 10-Q (quarterly) filings only — exclude 8-Ks, DEF14As, etc.
+            filings = [v for v in values if v.get("form") in ("10-K", "10-Q") and "end" in v]
+            if not filings:
+                return None
+
+            # Sort by end date descending and return the most recent value
+            filings.sort(key=lambda v: v["end"], reverse=True)
+            return float(filings[0]["val"])
+        except Exception:
+            return None
+
+    def get_book_value_data(self, ticker: str) -> Optional[Dict[str, Any]]:
+        """
+        Returns the most recent stockholders' equity and total shares outstanding
+        from SEC EDGAR, which allows accurate P/B calculation for multi-class share structures.
+        """
+        facts = self.get_company_facts(ticker)
+        if not facts:
+            return None
+
+        # Try primary equity concept, fall back to the consolidated version
+        equity = self._get_most_recent_value(facts, "StockholdersEquity")
+        if equity is None:
+            equity = self._get_most_recent_value(
+                facts, "StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest"
+            )
+
+        # Total shares outstanding (all classes)
+        shares = self._get_most_recent_value(facts, "CommonStockSharesOutstanding")
+
+        if equity is None or shares is None or shares <= 0:
+            return None
+
+        return {
+            "stockholders_equity": equity,
+            "total_shares_outstanding": shares,
+            "book_value_per_share": equity / shares,
+        }
