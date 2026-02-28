@@ -9,9 +9,11 @@ interface StockData {
     market_data: any;
     value_metrics: {
         intrinsic_value_dcf: number | null;
-        graham_number: number | null;
         margin_of_safety_dcf: number | null;
-        margin_of_safety_graham: number | null;
+        earnings_yield?: number | null;
+        ev_to_ebit?: number | null;
+        fcf_yield?: number | null;
+        roic?: number | null;
     };
     has_sec_data: boolean;
 }
@@ -189,15 +191,18 @@ Here is the current fundamental data:
 - Revenue Growth: ${data.market_data.revenue_growth !== undefined && data.market_data.revenue_growth !== null ? `${(data.market_data.revenue_growth * 100).toFixed(1)}%` : "N/A"}
 - Free Cash Flow: ${data.market_data.free_cashflow ? `$${(data.market_data.free_cashflow / 1e9).toFixed(2)}B` : "N/A"}
 - EPS: ${formatCurrency(data.market_data.eps)}
+- Earnings Yield: ${data.value_metrics?.earnings_yield !== undefined && data.value_metrics?.earnings_yield !== null ? `${data.value_metrics.earnings_yield}%` : "N/A"}
+- FCF Yield: ${data.value_metrics?.fcf_yield !== undefined && data.value_metrics?.fcf_yield !== null ? `${data.value_metrics.fcf_yield}%` : "N/A"}
+- EV/EBIT: ${data.value_metrics?.ev_to_ebit !== undefined && data.value_metrics?.ev_to_ebit !== null ? `${data.value_metrics.ev_to_ebit}x` : "N/A"}
+- ROIC: ${data.value_metrics?.roic !== undefined && data.value_metrics?.roic !== null ? `${data.value_metrics.roic}%` : "N/A"}
 - Debt/Eq Ratio: ${data.market_data.debt_to_equity !== undefined && data.market_data.debt_to_equity !== null ? data.market_data.debt_to_equity.toFixed(2) : "N/A"}
 - Analyst Rating: ${data.market_data.analyst_rating ? data.market_data.analyst_rating.toUpperCase() : "N/A"}
 - Next Earnings: ${data.market_data.next_earnings_date || "N/A"}
 
 Valuation Models:
 1. DCF Intrinsic Value: ${formatCurrency(dcfValue)} (based on ${growthRate}% growth, ${discountRate}% discount rate, ${terminalMultiple}x terminal multiple).
-2. Graham Number: ${formatCurrency(data.value_metrics.graham_number)}.
 
-Based on Benjamin Graham and Warren Buffett's value investing principles, does this stock offer a sufficient margin of safety? 
+Based on Warren Buffett's value investing principles, does this stock offer a sufficient margin of safety? 
 What are the key risks to my DCF assumptions, and what qualitative factors should I research further before investing?`;
     };
 
@@ -268,11 +273,15 @@ What are the key risks to my DCF assumptions, and what qualitative factors shoul
                     )}
                 </div>
 
-                <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4 mt-2">
+                <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4 mt-2">
                     {[
                         { label: "P/E Ratio", value: data.market_data.trailing_pe?.toFixed(2), icon: TrendingUp },
                         { label: "PEG Ratio", value: data.market_data.peg_ratio?.toFixed(2), icon: TrendingUp },
+                        { label: "EV/EBIT", value: data.value_metrics?.ev_to_ebit !== undefined && data.value_metrics?.ev_to_ebit !== null ? `${data.value_metrics.ev_to_ebit}x` : "N/A", icon: BarChart3 },
+                        { label: "Earnings Yield", value: data.value_metrics?.earnings_yield !== undefined && data.value_metrics?.earnings_yield !== null ? `${data.value_metrics.earnings_yield}%` : "N/A", icon: DollarSign },
+                        { label: "FCF Yield", value: data.value_metrics?.fcf_yield !== undefined && data.value_metrics?.fcf_yield !== null ? `${data.value_metrics.fcf_yield}%` : "N/A", icon: DollarSign },
                         { label: "ROE", value: data.market_data.return_on_equity !== undefined && data.market_data.return_on_equity !== null ? `${(data.market_data.return_on_equity * 100).toFixed(1)}%` : "N/A", icon: BarChart3 },
+                        { label: "ROIC", value: data.value_metrics?.roic !== undefined && data.value_metrics?.roic !== null ? `${data.value_metrics.roic}%` : "N/A", icon: BarChart3 },
                         { label: "Op. Margin", value: data.market_data.operating_margin !== undefined && data.market_data.operating_margin !== null ? `${(data.market_data.operating_margin * 100).toFixed(1)}%` : "N/A", icon: BarChart3 },
                         { label: "Rev. Growth", value: data.market_data.revenue_growth !== undefined && data.market_data.revenue_growth !== null ? `${(data.market_data.revenue_growth * 100).toFixed(1)}%` : "N/A", icon: TrendingUp },
                         { label: "EPS", value: formatCurrency(data.market_data.eps), icon: DollarSign },
@@ -281,7 +290,7 @@ What are the key risks to my DCF assumptions, and what qualitative factors shoul
                         { label: "Analyst Rating", value: data.market_data.analyst_rating ? data.market_data.analyst_rating.toUpperCase() : "N/A", icon: Star },
                         { label: "Next Earnings", value: data.market_data.next_earnings_date || "N/A", icon: Calendar },
                     ].map((stat, i) => (
-                        <div key={i} className={`bg-white border border-slate-200 p-4 rounded-2xl flex flex-col justify-between shadow-sm hover:shadow-md transition-shadow ${stat.label === "Next Earnings" || stat.label === "Analyst Rating" ? "col-span-2 md:col-span-2 lg:col-span-3" : "col-span-2 md:col-span-2 lg:col-span-2"}`}>
+                        <div key={i} className={`bg-white border border-slate-200 p-4 rounded-2xl flex flex-col justify-between shadow-sm hover:shadow-md transition-shadow ${stat.label === "Next Earnings" || stat.label === "Analyst Rating" ? "col-span-2 md:col-span-2 lg:col-span-3" : stat.label === "Free Cash Flow" ? "col-span-2 md:col-span-2 lg:col-span-2" : stat.label === "Debt/Eq Ratio" ? "col-span-2 md:col-span-2 lg:col-span-2" : "col-span-2 md:col-span-2 lg:col-span-2"}`}>
                             <div className="flex items-center gap-2 text-slate-500 mb-2">
                                 <stat.icon className="w-4 h-4 text-emerald-500" />
                                 <span className="text-xs uppercase tracking-wider font-bold">{stat.label}</span>
@@ -338,17 +347,6 @@ What are the key risks to my DCF assumptions, and what qualitative factors shoul
                         </div>
                     </div>
 
-                    <div className="p-8 rounded-3xl border border-slate-200 bg-white shadow-sm hover:shadow-md transition-transform duration-300 hover:-translate-y-1 relative overflow-hidden">
-                        <div className="absolute top-0 right-0 w-32 h-32 bg-purple-50 rounded-full blur-3xl -mr-10 -mt-10 pointer-events-none"></div>
-                        <h3 className="text-sm font-bold uppercase tracking-wider text-slate-500 relative z-10">Graham Number</h3>
-                        <div className="mt-2 text-5xl font-bold tracking-tight text-purple-600 relative z-10">
-                            {formatCurrency(data.value_metrics.graham_number)}
-                        </div>
-                        <div className="mt-4 flex flex-col gap-1 text-sm text-slate-500 relative z-10">
-                            <p>Benjamin Graham's defensive price limit.</p>
-                            <p className="font-mono bg-slate-50 text-slate-600 px-2 py-1 rounded inline-block w-max">sqrt(22.5 × EPS × BVPS)</p>
-                        </div>
-                    </div>
                 </div>
 
             </div>

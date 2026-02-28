@@ -19,7 +19,7 @@ export default function AnalysisIndexPage() {
         <div className="max-w-xl mx-auto flex flex-col items-center justify-center min-h-[60vh] gap-6 text-center">
             <h1 className="text-4xl font-bold tracking-tight text-slate-800">Deep Dive Analysis</h1>
             <p className="text-slate-500 leading-relaxed">
-                Enter a single ticker symbol to run a comprehensive value investing analysis including DCF and Graham models.
+                Enter a single ticker symbol to run a comprehensive value investing analysis including DCF models.
             </p>
             <form onSubmit={handleSearch} className="w-full relative mt-4 group">
                 <Search className="absolute left-5 top-1/2 -translate-y-1/2 w-6 h-6 text-slate-400 group-focus-within:text-emerald-500 transition-colors" />

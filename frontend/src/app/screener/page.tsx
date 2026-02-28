@@ -18,7 +18,6 @@ interface ScreenResult {
     market_cap: number | null;
     eps: number | null;
     intrinsic_value: number | null;
-    graham_number: number | null;
     margin_of_safety: number | null;
 }
 

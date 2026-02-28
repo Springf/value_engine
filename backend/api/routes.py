@@ -3,7 +3,7 @@ from typing import List
 from pydantic import BaseModel
 from .sec_client import SECClient
 from .yahoo_client import YahooClient
-from models.calculators import calculate_dcf, calculate_graham_number
+from models.calculators import calculate_dcf
 from .sp500_list import SP500_TICKERS
 
 router = APIRouter(prefix="/api/data", tags=["data"])
@@ -227,47 +227,75 @@ def get_stock_data(ticker: str):
             shares_outstanding=shares_outstanding
         )
 
-    # 2. Graham Number
-    # Note: For international stocks, raw EPS and Book Value are often in a different currency
-    # (e.g., CNY) than the trading price (e.g., HKD). To ensure the Graham Number is in the
-    # same currency as the stock price, we derive EPS and BVPS from P/E and P/B ratios, 
-    # which are implicitly currency-adjusted by the market.
-    pe = yahoo_info.get("trailing_pe")
-    pb = yahoo_info.get("price_to_book") # Added this back below
-    
+
     # We still prefer SEC BVPS for US stocks since it uses total shares
     bvps = None
     if sec_bv_data:
         bvps = sec_bv_data.get("book_value_per_share")
         yahoo_info["sec_book_value_per_share"] = round(bvps, 4) if bvps else None
 
-    graham_number = None
-    
-    # Calculate Graham Number
-    # For international stocks, derive EPS and BVPS to avoid currency mismatch
-    is_us = "." not in ticker
-    if not is_us and pe and pb and pe > 0 and pb > 0 and current_price and current_price > 0:
-        derived_eps = current_price / pe
-        derived_bvps = current_price / pb
-        graham_number = calculate_graham_number(eps=derived_eps, book_value_per_share=derived_bvps)
-    # For US stocks, use SEC BVPS if available, otherwise fallback to Yahoo book value, and use raw EPS
-    else:
-        eps = yahoo_info.get("eps")
-        us_bvps = bvps if bvps is not None else yahoo_info.get("book_value")
-        if us_bvps and eps and us_bvps > 0 and eps > 0:
-            graham_number = calculate_graham_number(eps=eps, book_value_per_share=us_bvps)
+    # Eject raw EPS early and guard against corrupted strings from Yahoo Finance
+    eps = yahoo_info.get("eps")
+    if isinstance(eps, str):
+        try:
+            eps = float(eps.strip())
+        except ValueError:
+            eps = None
         
     # Explicitly attach shares_outstanding back to market_data for frontend usage
     yahoo_info["shares_outstanding"] = shares_outstanding
+
+    # 3. Advanced Metrics (Earnings Yield, EV/EBIT, FCF Yield, ROIC)
+    advanced_metrics = yahoo_client.get_advanced_metrics(ticker) or {}
+    ebit = advanced_metrics.get("ebit")
+    invested_capital = advanced_metrics.get("invested_capital")
+    tax_rate = advanced_metrics.get("tax_rate", 0.21)
+
+    earnings_yield = None
+    try:
+        if isinstance(eps, (int, float)):
+            eps_float = float(eps)
+        else:
+            eps_float = float(str(eps).strip()) if eps is not None else None
+            
+        if current_price and current_price > 0 and eps_float is not None:
+            earnings_yield = round((eps_float / current_price) * 100, 2)
+    except (ValueError, TypeError):
+        pass
+        
+    fcf_yield = None
+    if market_cap and market_cap > 0 and fcf is not None:
+        try:
+            fcf_yield = round((float(fcf) / float(market_cap)) * 100, 2)
+        except (ValueError, TypeError):
+            pass
+        
+    enterprise_value = yahoo_info.get("enterprise_value")
+    ev_to_ebit = None
+    if enterprise_value is not None and ebit is not None and ebit != 0:
+        try:
+            ev_to_ebit = round(float(enterprise_value) / float(ebit), 2)
+        except (ValueError, TypeError):
+            pass
+        
+    roic = None
+    if ebit is not None and invested_capital is not None and invested_capital != 0:
+        try:
+            nopat = float(ebit) * (1 - float(tax_rate))
+            roic = round((nopat / float(invested_capital)) * 100, 2)
+        except (ValueError, TypeError):
+            pass
 
     return {
         "ticker": ticker.upper(),
         "market_data": yahoo_info,
         "value_metrics": {
              "intrinsic_value_dcf": intrinsic_value,
-             "graham_number": graham_number,
              "margin_of_safety_dcf": round(((intrinsic_value - current_price) / intrinsic_value) * 100, 2) if intrinsic_value and current_price else None,
-             "margin_of_safety_graham": round(((graham_number - current_price) / graham_number) * 100, 2) if graham_number and current_price else None
+             "earnings_yield": earnings_yield,
+             "ev_to_ebit": ev_to_ebit,
+             "fcf_yield": fcf_yield,
+             "roic": roic
         },
         "has_sec_data": sec_data is not None
 

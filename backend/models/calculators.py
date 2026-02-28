@@ -32,16 +32,4 @@ def calculate_dcf(
     
     return round(intrinsic_value_per_share, 2)
 
-def calculate_graham_number(
-    eps: float, 
-    book_value_per_share: float
-) -> Optional[float]:
-    """
-    Calculate Benjamin Graham's defensive intrinsic value.
-    Formula: sqrt(22.5 * EPS * Book Value Per Share)
-    """
-    if eps < 0 or book_value_per_share < 0:
-        return None
-        
-    value = math.sqrt(22.5 * eps * book_value_per_share)
-    return round(value, 2)
+

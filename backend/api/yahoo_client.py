@@ -32,6 +32,7 @@ class YahooClient:
                 "price_to_book": info.get("priceToBook"),
                 "free_cashflow": info.get("freeCashflow"),
                 "market_cap": info.get("marketCap"),
+                "enterprise_value": info.get("enterpriseValue"),
                 "eps": info.get("trailingEps"),
                 "forward_eps": info.get("forwardEps"),
                 "currency": info.get("currency"),
@@ -50,4 +51,41 @@ class YahooClient:
             }
         except Exception as e:
             print(f"Error fetching data for {ticker} from Yahoo Finance: {e}")
+            return None
+
+    def get_advanced_metrics(self, ticker: str) -> Optional[Dict[str, Any]]:
+        """Fetches advanced calculated metrics (EBIT, Invested Capital, Tax Rate) from financial statements."""
+        try:
+            stock = yf.Ticker(ticker)
+            inc = stock.income_stmt
+            bs = stock.balance_sheet
+            
+            if inc.empty and bs.empty:
+                return None
+
+            ebit = None
+            tax_rate = 0.21 # Default fallback
+            
+            if not inc.empty:
+                ebit = float(inc.loc['EBIT'].iloc[0]) if 'EBIT' in inc.index else None
+                
+                tax_prov = float(inc.loc['Tax Provision'].iloc[0]) if 'Tax Provision' in inc.index else None
+                pretax = float(inc.loc['Pretax Income'].iloc[0]) if 'Pretax Income' in inc.index else None
+                
+                if tax_prov is not None and pretax is not None and pretax > 0:
+                    calculated_rate = tax_prov / pretax
+                    if 0 <= calculated_rate <= 1:
+                        tax_rate = calculated_rate
+
+            invested_capital = None
+            if not bs.empty:
+                invested_capital = float(bs.loc['Invested Capital'].iloc[0]) if 'Invested Capital' in bs.index else None
+
+            return {
+                "ebit": ebit,
+                "invested_capital": invested_capital,
+                "tax_rate": tax_rate
+            }
+        except Exception as e:
+            print(f"Error fetching advanced metrics for {ticker} from Yahoo Finance: {e}")
             return None
