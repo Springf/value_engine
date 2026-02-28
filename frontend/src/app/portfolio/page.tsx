@@ -102,6 +102,10 @@ export default function PortfolioPage() {
     };
 
     const removeTicker = async (ticker: string) => {
+        if (!window.confirm(`Are you sure you want to remove ${ticker} from your portfolio?`)) {
+            return;
+        }
+
         try {
             await fetch(`http://localhost:8000/api/data/portfolio/${ticker}`, {
                 method: "DELETE"

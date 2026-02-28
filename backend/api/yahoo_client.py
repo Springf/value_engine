@@ -1,5 +1,6 @@
 import yfinance as yf
 from datetime import datetime
+import math
 from typing import Dict, Any, Optional
 
 class YahooClient:
@@ -53,6 +54,15 @@ class YahooClient:
             print(f"Error fetching data for {ticker} from Yahoo Finance: {e}")
             return None
 
+    def _safe_float(self, value: Any) -> Optional[float]:
+        try:
+            val = float(value)
+            if math.isnan(val):
+                return None
+            return val
+        except (ValueError, TypeError):
+            return None
+
     def get_advanced_metrics(self, ticker: str) -> Optional[Dict[str, Any]]:
         """Fetches advanced calculated metrics (EBIT, Invested Capital, Tax Rate) from financial statements."""
         try:
@@ -67,10 +77,10 @@ class YahooClient:
             tax_rate = 0.21 # Default fallback
             
             if not inc.empty:
-                ebit = float(inc.loc['EBIT'].iloc[0]) if 'EBIT' in inc.index else None
+                ebit = self._safe_float(inc.loc['EBIT'].iloc[0]) if 'EBIT' in inc.index else None
                 
-                tax_prov = float(inc.loc['Tax Provision'].iloc[0]) if 'Tax Provision' in inc.index else None
-                pretax = float(inc.loc['Pretax Income'].iloc[0]) if 'Pretax Income' in inc.index else None
+                tax_prov = self._safe_float(inc.loc['Tax Provision'].iloc[0]) if 'Tax Provision' in inc.index else None
+                pretax = self._safe_float(inc.loc['Pretax Income'].iloc[0]) if 'Pretax Income' in inc.index else None
                 
                 if tax_prov is not None and pretax is not None and pretax > 0:
                     calculated_rate = tax_prov / pretax
@@ -79,7 +89,7 @@ class YahooClient:
 
             invested_capital = None
             if not bs.empty:
-                invested_capital = float(bs.loc['Invested Capital'].iloc[0]) if 'Invested Capital' in bs.index else None
+                invested_capital = self._safe_float(bs.loc['Invested Capital'].iloc[0]) if 'Invested Capital' in bs.index else None
 
             return {
                 "ebit": ebit,
