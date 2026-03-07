@@ -38,6 +38,10 @@ class HistoryLog(BaseModel):
     dcf_discount: float | None = None
     dcf_multiple: float | None = None
     dcf_value: float | None = None
+    # Transaction fields
+    transaction_type: str | None = None # "buy", "sell"
+    transaction_price: float | None = None
+    transaction_size: float | None = None
 
 class PortfolioItem(BaseModel):
     ticker: str

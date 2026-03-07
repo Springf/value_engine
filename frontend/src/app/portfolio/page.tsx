@@ -180,9 +180,27 @@ export default function PortfolioPage() {
 
                         const isUndervalued = dynamicMos !== null && dynamicMos !== undefined && dynamicMos > 0;
 
-                        let priceChangePct = null;
-                        if (row && row.price && portfolioItem.priceAdded) {
-                            priceChangePct = ((row.price - portfolioItem.priceAdded) / portfolioItem.priceAdded) * 100;
+                        // Calculate Position and P&L from transaction history
+                        let totalSize = 0;
+                        let avgCost = 0;
+                        history.forEach((h: any) => {
+                            if (h.transaction_type === "buy" && h.transaction_price && h.transaction_size) {
+                                const oldCost = totalSize * avgCost;
+                                totalSize += h.transaction_size;
+                                avgCost = (oldCost + (h.transaction_price * h.transaction_size)) / totalSize;
+                            } else if (h.transaction_type === "sell" && h.transaction_size) {
+                                totalSize -= h.transaction_size;
+                                // avgCost remains same
+                            }
+                        });
+
+                        const marketPrice = row?.price;
+                        let totalPL = null;
+                        let totalPLPct = null;
+
+                        if (totalSize > 0 && marketPrice && avgCost > 0) {
+                            totalPL = (marketPrice - avgCost) * totalSize;
+                            totalPLPct = ((marketPrice - avgCost) / avgCost) * 100;
                         }
 
                         return (
@@ -223,15 +241,30 @@ export default function PortfolioPage() {
                                             <span className="font-semibold text-slate-700 text-sm">${portfolioItem.priceAdded?.toFixed(2) || "N/A"}</span>
                                         </div>
                                         <div className="flex justify-between items-center text-sm border-b border-slate-50 pb-2">
+                                            <span className="text-slate-500 font-medium">Position</span>
+                                            <span className="font-semibold text-slate-700 text-sm">{totalSize > 0 ? `${totalSize.toLocaleString()} shares` : "Observation Only"}</span>
+                                        </div>
+                                        {avgCost !== null && (
+                                            <div className="flex justify-between items-center text-sm border-b border-slate-50 pb-2">
+                                                <span className="text-slate-500 font-medium">Avg Cost</span>
+                                                <span className="font-semibold text-slate-700 text-sm">${avgCost.toFixed(2)}</span>
+                                            </div>
+                                        )}
+                                        <div className="flex justify-between items-center text-sm border-b border-slate-50 pb-2">
                                             <span className="text-slate-500 font-medium">Current Price</span>
                                             <span className="font-bold text-slate-800 text-base">${row.price?.toFixed(2) || "N/A"}</span>
                                         </div>
-                                        {priceChangePct !== null && (
+                                        {totalPL !== null && (
                                             <div className="flex justify-between items-center text-sm border-b border-slate-50 pb-2">
                                                 <span className="text-slate-500 font-medium">Gain / Loss</span>
-                                                <span className={`font-bold text-sm ${priceChangePct > 0 ? 'text-emerald-500' : 'text-red-500'}`}>
-                                                    {priceChangePct > 0 ? '+' : ''}{priceChangePct.toFixed(2)}%
-                                                </span>
+                                                <div className="flex flex-col items-end">
+                                                    <span className={`font-bold text-sm ${totalPL >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>
+                                                        {totalPL >= 0 ? '+' : ''}${Math.abs(totalPL).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                                    </span>
+                                                    <span className={`text-[10px] font-bold ${totalPLPct && totalPLPct >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>
+                                                        ({totalPLPct && totalPLPct >= 0 ? '+' : ''}{totalPLPct?.toFixed(2)}%)
+                                                    </span>
+                                                </div>
                                             </div>
                                         )}
                                         <div className="flex justify-between items-center text-sm border-b border-slate-50 pb-2">

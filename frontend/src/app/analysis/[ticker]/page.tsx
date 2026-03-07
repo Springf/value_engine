@@ -28,6 +28,9 @@ export default function AnalysisTickerPage() {
     const [isInPortfolio, setIsInPortfolio] = useState(false);
     const [portfolioHistory, setPortfolioHistory] = useState<any[]>([]);
     const [notes, setNotes] = useState("");
+    const [transactionType, setTransactionType] = useState<"buy" | "sell" | "none">("none");
+    const [transactionPrice, setTransactionPrice] = useState<string>("");
+    const [transactionSize, setTransactionSize] = useState<string>("");
 
     // DCF Assumptions State
     const [growthRate, setGrowthRate] = useState<number>(5);
@@ -112,7 +115,7 @@ export default function AnalysisTickerPage() {
         if (!data || !data.market_data) return;
 
         try {
-            const historyEntry = {
+            const historyEntry: any = {
                 timestamp: new Date().toISOString(),
                 notes: notes || null,
                 dcf_growth: growthRate,
@@ -120,6 +123,23 @@ export default function AnalysisTickerPage() {
                 dcf_multiple: terminalMultiple,
                 dcf_value: dcfValue
             };
+
+            if (transactionType !== "none") {
+                if (!transactionSize || parseFloat(transactionSize) <= 0) {
+                    alert("Please enter a valid number of shares for the transaction.");
+                    return;
+                }
+
+                const finalPrice = transactionPrice ? parseFloat(transactionPrice) : data.market_data.current_price;
+                if (isNaN(finalPrice)) {
+                    alert("Invalid transaction price.");
+                    return;
+                }
+
+                historyEntry.transaction_type = transactionType;
+                historyEntry.transaction_price = finalPrice;
+                historyEntry.transaction_size = parseFloat(transactionSize);
+            }
 
             const payload = {
                 ticker: ticker,
@@ -140,6 +160,9 @@ export default function AnalysisTickerPage() {
                 // Refresh local history view seamlessly
                 setPortfolioHistory(prev => [...prev, historyEntry]);
                 setNotes(""); // Clear notes after save
+                setTransactionType("none");
+                setTransactionPrice("");
+                setTransactionSize("");
             } else {
                 alert(`Failed to save ${ticker} to portfolio.`);
             }
@@ -220,12 +243,40 @@ What are the key risks to my DCF assumptions, and what qualitative factors shoul
                     <h1 className="text-4xl font-bold tracking-tight text-slate-800">
                         {data.market_data.short_name || data.ticker} <span className="font-mono text-slate-400 text-2xl font-normal ml-2">{data.ticker}</span>
                     </h1>
-                    <div className="flex items-center gap-3 mt-2 text-slate-500">
+                    <div className="flex items-center gap-4 mt-2 text-slate-500">
                         <span className="text-2xl font-semibold text-slate-900">{formatCurrency(data.market_data.current_price)}</span>
                         <span>Market Cap: {data.market_data.market_cap ? `$${(data.market_data.market_cap / 1e9).toFixed(2)}B` : "N/A"}</span>
-                        {data.market_data.last_market_update && (
-                            <span className="text-xs text-slate-400">{data.market_data.last_market_update}</span>
-                        )}
+                        {(() => {
+                            // Calculate Current Position
+                            let totalSize = 0;
+                            let avgCost = 0;
+                            portfolioHistory.forEach(h => {
+                                if (h.transaction_type === "buy" && h.transaction_price && h.transaction_size) {
+                                    const oldSize = totalSize;
+                                    const oldCost = totalSize * avgCost;
+                                    totalSize += h.transaction_size;
+                                    avgCost = (oldCost + (h.transaction_price * h.transaction_size)) / totalSize;
+                                } else if (h.transaction_type === "sell" && h.transaction_size) {
+                                    totalSize -= h.transaction_size;
+                                    // avgCost remains same
+                                }
+                            });
+
+                            if (totalSize > 0) {
+                                const currentPrice = data.market_data.current_price;
+                                const pl = (currentPrice - avgCost) * totalSize;
+                                const plPct = ((currentPrice - avgCost) / avgCost) * 100;
+                                return (
+                                    <div className="flex items-center gap-2 bg-emerald-50 text-emerald-700 px-3 py-1 rounded-lg border border-emerald-100 text-sm font-bold">
+                                        <span>Position: {totalSize.toLocaleString()} @ {formatCurrency(avgCost)}</span>
+                                        <span className={pl >= 0 ? "text-emerald-600" : "text-red-600"}>
+                                            P&L: {pl >= 0 ? "+" : ""}{formatCurrency(pl)} ({pl >= 0 ? "+" : ""}{plPct.toFixed(2)}%)
+                                        </span>
+                                    </div>
+                                );
+                            }
+                            return null;
+                        })()}
                     </div>
                 </div>
                 <button
@@ -351,17 +402,67 @@ What are the key risks to my DCF assumptions, and what qualitative factors shoul
 
             </div>
 
-            {/* Section 3: Investment Notes */}
-            <div className="flex flex-col gap-4 mt-4">
-                <h2 className="text-2xl font-bold text-slate-800">Investment Notes</h2>
-                <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm">
-                    <p className="text-sm text-slate-500 mb-3">Record any qualitative thoughts or thesis points before saving to your portfolio.</p>
-                    <textarea
-                        value={notes}
-                        onChange={(e) => setNotes(e.target.value)}
-                        placeholder="e.g. They just announced a massive buyback, and margins are expanding rapidly..."
-                        className="w-full bg-slate-50 border border-slate-200 rounded-xl p-4 text-sm text-slate-700 min-h-[120px] focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-white transition-colors"
-                    />
+            {/* Section 3: Portfolio Management (Transactions & Notes) */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-4">
+                <div className="flex flex-col gap-4">
+                    <h2 className="text-2xl font-bold text-slate-800">Add Transaction</h2>
+                    <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm flex flex-col gap-4">
+                        <div>
+                            <label className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2 block">Action</label>
+                            <div className="flex bg-slate-100 p-1 rounded-xl">
+                                {(["none", "buy", "sell"] as const).map((t) => (
+                                    <button
+                                        key={t}
+                                        onClick={() => setTransactionType(t)}
+                                        className={`flex-1 py-2 px-3 rounded-lg text-sm font-bold transition-all ${transactionType === t ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                                    >
+                                        {t.charAt(0).toUpperCase() + t.slice(1)}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
+                        {transactionType !== "none" && (
+                            <div className="grid grid-cols-2 gap-4 animate-in fade-in slide-in-from-top-2 duration-300">
+                                <div>
+                                    <label className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2 block">Price</label>
+                                    <div className="relative">
+                                        <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                                        <input
+                                            type="number"
+                                            value={transactionPrice}
+                                            onChange={(e) => setTransactionPrice(e.target.value)}
+                                            placeholder={data.market_data.current_price?.toString()}
+                                            className="w-full bg-slate-50 border border-slate-200 rounded-xl py-2.5 pl-9 pr-4 text-sm font-medium text-slate-800 focus:bg-white focus:ring-2 focus:ring-emerald-500 transition-all outline-none"
+                                        />
+                                    </div>
+                                </div>
+                                <div>
+                                    <label className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2 block">Shares</label>
+                                    <input
+                                        type="number"
+                                        value={transactionSize}
+                                        onChange={(e) => setTransactionSize(e.target.value)}
+                                        placeholder="100"
+                                        className="w-full bg-slate-50 border border-slate-200 rounded-xl py-2.5 px-4 text-sm font-medium text-slate-800 focus:bg-white focus:ring-2 focus:ring-emerald-500 transition-all outline-none"
+                                    />
+                                </div>
+                            </div>
+                        )}
+                        <p className="text-[10px] text-slate-400">Transactions will be recorded in your portfolio history.</p>
+                    </div>
+                </div>
+
+                <div className="flex flex-col gap-4">
+                    <h2 className="text-2xl font-bold text-slate-800">Investment Thesis</h2>
+                    <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm">
+                        <textarea
+                            value={notes}
+                            onChange={(e) => setNotes(e.target.value)}
+                            placeholder="Record qualitative thoughts or thesis points..."
+                            className="w-full bg-slate-50 border border-slate-200 rounded-xl p-4 text-sm text-slate-700 h-[132px] focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-white transition-all outline-none"
+                        />
+                    </div>
                 </div>
             </div>
 
@@ -389,6 +490,14 @@ What are the key risks to my DCF assumptions, and what qualitative factors shoul
                                     <span>Growth: <strong className="text-slate-700">{log.dcf_growth}%</strong></span>
                                     <span>Discount: <strong className="text-slate-700">{log.dcf_discount}%</strong></span>
                                     <span>Terminal: <strong className="text-slate-700">{log.dcf_multiple}x</strong></span>
+                                    {log.transaction_type && (
+                                        <div className="ml-auto flex items-center gap-2">
+                                            <span className={`uppercase font-bold px-2 py-0.5 rounded ${log.transaction_type === 'buy' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
+                                                {log.transaction_type}
+                                            </span>
+                                            <span className="text-slate-800 font-bold">{log.transaction_size} @ {formatCurrency(log.transaction_price)}</span>
+                                        </div>
+                                    )}
                                 </div>
                             </div>
                         ))}
